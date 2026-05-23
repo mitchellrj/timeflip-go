@@ -43,6 +43,46 @@ func TestReadBattery(t *testing.T) {
 	}
 }
 
+func TestReadDeviceInfoReturnsPartialFields(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charDeviceName:       []byte("TIMEFLIP2"),
+			charFirmwareRevision: []byte("1.2.3"),
+		},
+		readErrs: map[CharacteristicID]error{
+			charManufacturerName: ErrProtocol,
+			charModelNumber:      ErrProtocol,
+			charHardwareRevision: ErrProtocol,
+			charSystemID:         ErrProtocol,
+		},
+	})
+	info, err := session.ReadDeviceInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name != "TIMEFLIP2" || info.FirmwareRevision != "1.2.3" {
+		t.Fatalf("unexpected info: %+v", info)
+	}
+	if info.ManufacturerName != "" || info.ModelNumber != "" || info.HardwareRevision != "" || info.SystemID != "" {
+		t.Fatalf("expected missing fields to stay blank: %+v", info)
+	}
+}
+
+func TestReadDeviceInfoFailsWhenAllFieldsMissing(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{readErrs: map[CharacteristicID]error{
+		charDeviceName:       ErrProtocol,
+		charManufacturerName: ErrProtocol,
+		charModelNumber:      ErrProtocol,
+		charHardwareRevision: ErrProtocol,
+		charFirmwareRevision: ErrProtocol,
+		charSystemID:         ErrProtocol,
+	}})
+	_, err := session.ReadDeviceInfo(context.Background())
+	if !errors.Is(err, ErrProtocol) {
+		t.Fatalf("expected protocol error when all fields are missing, got %v", err)
+	}
+}
+
 func TestSendCommandRejected(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
 		charCommandResult: {byte(cmdLock), 0x01},

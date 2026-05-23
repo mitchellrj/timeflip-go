@@ -434,11 +434,13 @@ Transport "1" --> "0..N" Connection : creates
    - `func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (TapSettings, error)`
 3. Logic:
    - Use characteristic reads for simple readable values.
+   - `ReadDeviceInfo` must treat individual standard Device Information characteristics as optional: return any fields that can be read, leave unavailable fields blank, and fail only when no Device Information characteristics can be read or a non-optional transport/cancellation error occurs.
    - Use command plus command-result/history characteristic for command-backed reads.
    - Apply global timeout or command override.
    - Return typed state and raw diagnostic bytes where appropriate.
 4. Edge Cases:
    - Wrong or missing authorization may surface as empty reads, command rejection, or explicit authorization errors depending on device behavior.
+   - Some real devices may omit one or more standard Device Information characteristics; missing optional fields must not cause the whole `ReadDeviceInfo` call to fail.
    - History stream may terminate with zero packet or connection close; distinguish complete from interrupted reads.
 
 ### Implement Write and Command APIs - Configuration and Commands

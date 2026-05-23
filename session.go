@@ -3,6 +3,7 @@ package timeflip
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"sync"
 	"time"
 )
@@ -48,12 +49,25 @@ func (s *Session) ReadDeviceInfo(ctx context.Context) (DeviceInfo, error) {
 	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
 	defer cancel()
 	values := map[CharacteristicID][]byte{}
+	var firstMissingErr error
 	for _, ch := range []CharacteristicID{charDeviceName, charManufacturerName, charModelNumber, charHardwareRevision, charFirmwareRevision, charSystemID} {
 		payload, err := s.conn.Read(ctx, ch)
 		if err != nil {
+			if errors.Is(err, ErrProtocol) {
+				if firstMissingErr == nil {
+					firstMissingErr = wrapContextErr("read_device_info", s.deviceID, "", 0, err)
+				}
+				continue
+			}
 			return DeviceInfo{}, wrapContextErr("read_device_info", s.deviceID, "", 0, err)
 		}
 		values[ch] = payload
+	}
+	if len(values) == 0 {
+		if firstMissingErr != nil {
+			return DeviceInfo{}, firstMissingErr
+		}
+		return DeviceInfo{}, &OperationError{Operation: "read_device_info", DeviceID: s.deviceID, Err: ErrProtocol}
 	}
 	return decodeDeviceInfo(values), nil
 }
