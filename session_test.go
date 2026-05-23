@@ -68,6 +68,31 @@ func TestReadDeviceInfoReturnsPartialFields(t *testing.T) {
 	}
 }
 
+func TestReadDeviceInfoFormatsSystemIDAsHex(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charDeviceName: []byte("TIMEFLIP2"),
+			charSystemID:   {0x51, 0x7D, 0x51, 0x7D},
+		},
+		readErrs: map[CharacteristicID]error{
+			charManufacturerName: ErrProtocol,
+			charModelNumber:      ErrProtocol,
+			charHardwareRevision: ErrProtocol,
+			charFirmwareRevision: ErrProtocol,
+		},
+	})
+	info, err := session.ReadDeviceInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.SystemID != "0x517D517D" {
+		t.Fatalf("unexpected system id: %+v", info)
+	}
+	if string(info.Raw[charSystemID]) != string([]byte{0x51, 0x7D, 0x51, 0x7D}) {
+		t.Fatalf("expected raw system id bytes to be preserved: %+v", info.Raw)
+	}
+}
+
 func TestReadDeviceInfoFailsWhenAllFieldsMissing(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{readErrs: map[CharacteristicID]error{
 		charDeviceName:       ErrProtocol,

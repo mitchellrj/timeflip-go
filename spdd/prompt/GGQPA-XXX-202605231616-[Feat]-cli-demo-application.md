@@ -358,6 +358,7 @@ Session "1" --> "0..N" Event : streams
      - `ReadTapSettings`
    - Use `timeflip.CommandOptions{Timeout: cfg.CommandTimeout}` for command-backed reads.
    - Print labeled fields and raw bytes only where the type already exposes useful diagnostics and the display remains readable.
+   - Display Device Information `system_id` as hex-code text such as `0x517D517D`, not decoded ASCII.
 5. Edge Cases:
    - Validate facet values before calling library methods.
    - Validate history start event as unsigned integer.

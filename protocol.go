@@ -2,6 +2,7 @@ package timeflip
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -176,9 +177,16 @@ func decodeDeviceInfo(values map[CharacteristicID][]byte) DeviceInfo {
 		ModelNumber:      cleanString(values[charModelNumber]),
 		HardwareRevision: cleanString(values[charHardwareRevision]),
 		FirmwareRevision: cleanString(values[charFirmwareRevision]),
-		SystemID:         cleanString(values[charSystemID]),
+		SystemID:         hexCode(values[charSystemID]),
 		Raw:              raw,
 	}
+}
+
+func hexCode(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	return "0x" + strings.ToUpper(hex.EncodeToString(b))
 }
 
 func cleanString(b []byte) string {
