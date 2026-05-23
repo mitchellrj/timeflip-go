@@ -366,9 +366,11 @@ Transport "1" --> "0..N" Connection : creates
    - `ManualAction *ManualAction`
 5. Logic:
    - Validate device ID and password inputs required for the requested flow.
+   - Treat `PairRequest.Password` as optional; require it only when the device already has a current password configured.
    - Connect to the device using the requested device ID.
    - If OS pairing is allowed, call `Transport.PairOS` and record performed, unsupported, or manual-action result.
-   - Authorize using the current password through the password characteristic.
+   - Authorize using the current password through the password characteristic only when `PairRequest.Password` is non-empty.
+   - If no current password is supplied, skip the authorize stage and continue with optional password setup and verification.
    - If requested, set a new six-character password using the supported command.
    - Verify usable state by reading a protected characteristic or command result.
    - Return completed result or partial staged result with recoverable error details.

@@ -24,7 +24,7 @@ events, errs, err := session.Events(ctx, timeflip.EventOptions{Buffer: 16})
 
 ## Pairing
 
-Pairing is a staged workflow for new or reset devices. It can include TimeFlip password authorization, optional password changes, verification reads, and OS-level pairing where the active OS adapter directly supports it. If OS pairing is not directly supported, the result can include a `ManualAction` with the device ID and instructions for caller- or user-initiated action.
+Pairing is a staged workflow for new or reset devices. The current password is optional and is needed only when the device already has one configured. Pairing can include TimeFlip password authorization, optional password changes, verification reads, and OS-level pairing where the active OS adapter directly supports it. If OS pairing is not directly supported, the result can include a `ManualAction` with the device ID and instructions for caller- or user-initiated action.
 
 ## Unpairing
 

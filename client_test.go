@@ -72,6 +72,35 @@ func TestPairManualOSActionAndPasswordChange(t *testing.T) {
 	}
 }
 
+func TestPairWithoutCurrentPasswordSkipsAuthorize(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charSystemState: {0x00, 0x00, 0x00, 0x00},
+	}}
+	client, err := NewClient(&fakeTransport{
+		connections: map[DeviceID]*fakeConnection{"tf": conn},
+	}, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Pair(context.Background(), PairRequest{DeviceID: "tf"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Completed {
+		t.Fatalf("expected completed pairing, got %+v", result)
+	}
+	for _, write := range conn.writes {
+		if write.characteristic == charPassword {
+			t.Fatalf("unexpected authorization write for blank current password: %+v", conn.writes)
+		}
+	}
+	for _, stage := range result.Stages {
+		if stage.Stage == string(PairingStageAuthorize) {
+			t.Fatalf("unexpected authorize stage for blank current password: %+v", result.Stages)
+		}
+	}
+}
+
 func TestUnpairUnsupportedOSReturnsManualAction(t *testing.T) {
 	ft := &fakeTransport{
 		unpairResult: OSActionResult{

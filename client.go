@@ -71,9 +71,14 @@ func (c *Client) Connect(ctx context.Context, req ConnectRequest) (*Session, err
 // Pair pairs a new or reset TimeFlip2 device.
 func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, error) {
 	result := PairingResult{DeviceID: req.DeviceID, Stage: PairingStageConnect}
-	if req.DeviceID == "" || req.Password == "" {
+	if req.DeviceID == "" {
 		err := &OperationError{Operation: "pair", DeviceID: req.DeviceID, Err: ErrInvalidInput}
 		result.Stages = append(result.Stages, stage(string(PairingStageConnect), false, err, nil))
+		return result, err
+	}
+	if req.Password != "" && len(req.Password) != 6 {
+		err := &OperationError{Operation: "pair", DeviceID: req.DeviceID, Stage: string(PairingStageAuthorize), Err: ErrInvalidInput}
+		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
 		return result, err
 	}
 	session, err := c.Connect(ctx, ConnectRequest{DeviceID: req.DeviceID, Timeout: req.Timeout})
@@ -96,12 +101,14 @@ func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, erro
 		}
 	}
 
-	result.Stage = PairingStageAuthorize
-	if _, err := session.Authorize(ctx, req.Password); err != nil {
-		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
-		return result, err
+	if req.Password != "" {
+		result.Stage = PairingStageAuthorize
+		if _, err := session.Authorize(ctx, req.Password); err != nil {
+			result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
+			return result, err
+		}
+		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), true, nil, nil))
 	}
-	result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), true, nil, nil))
 
 	if req.NewPassword != "" {
 		result.Stage = PairingStagePassword

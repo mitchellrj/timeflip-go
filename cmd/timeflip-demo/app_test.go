@@ -104,6 +104,19 @@ func TestPairAndUnpairManualActionOutput(t *testing.T) {
 	}
 }
 
+func TestPairAllowsBlankCurrentPassword(t *testing.T) {
+	conn := &fakeDemoConnection{}
+	app, input, out, errOut := newTestApp(t, &fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}})
+	input.answers = []string{"", "n", "n"}
+	app.Execute(context.Background(), "pair tf")
+	if !strings.Contains(out.String(), "pairing_completed: true") {
+		t.Fatalf("missing pairing output: out=%q err=%q", out.String(), errOut.String())
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected error: %q", errOut.String())
+	}
+}
+
 func TestSessionLifecycleAndStreamCancellation(t *testing.T) {
 	conn := &fakeDemoConnection{}
 	app, input, out, errOut := newTestApp(t, &fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}})

@@ -122,11 +122,11 @@ func runPair(ctx context.Context, app *DemoApp, args []string) error {
 	if err != nil {
 		return err
 	}
-	password, err := app.in.PromptSecret("Current password (six characters): ")
+	password, err := app.in.PromptSecret("Current password if previously set (leave blank if none): ")
 	if err != nil {
 		return err
 	}
-	if len(password) != 6 {
+	if password != "" && len(password) != 6 {
 		return fmt.Errorf("password must be six characters")
 	}
 	var newPassword string
