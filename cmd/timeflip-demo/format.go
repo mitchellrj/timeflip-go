@@ -169,6 +169,21 @@ func (f *TextFormatter) PrintError(err error) {
 	fmt.Fprintf(f.err, "error: %v\n", err)
 }
 
+func (f *TextFormatter) PrintSuggestions(commands []string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(commands) == 0 {
+		return
+	}
+	fmt.Fprintln(f.out, "next:")
+	for _, command := range commands {
+		if strings.TrimSpace(command) == "" {
+			continue
+		}
+		fmt.Fprintf(f.out, "  %s\n", command)
+	}
+}
+
 func printManualAction(w io.Writer, action *timeflip.ManualAction) {
 	if action == nil {
 		return

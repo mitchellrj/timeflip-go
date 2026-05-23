@@ -70,6 +70,17 @@ func TestListCanSelectSingleSupportedDevice(t *testing.T) {
 	if !strings.Contains(out.String(), "TimeFlip2") {
 		t.Fatalf("missing list output: %q", out.String())
 	}
+	if !strings.Contains(out.String(), "next:") || !strings.Contains(out.String(), "pair tf") {
+		t.Fatalf("missing next action suggestion: %q", out.String())
+	}
+}
+
+func TestSelectSuggestsPairAndConnect(t *testing.T) {
+	app, _, out, _ := newTestApp(t, &fakeDemoTransport{})
+	app.Execute(context.Background(), "select tf")
+	if !strings.Contains(out.String(), "next:") || !strings.Contains(out.String(), "pair tf") || !strings.Contains(out.String(), "connect tf") {
+		t.Fatalf("missing select suggestions: %q", out.String())
+	}
 }
 
 func TestPairAndUnpairManualActionOutput(t *testing.T) {
@@ -112,6 +123,9 @@ func TestPairAllowsBlankCurrentPassword(t *testing.T) {
 	if !strings.Contains(out.String(), "pairing_completed: true") {
 		t.Fatalf("missing pairing output: out=%q err=%q", out.String(), errOut.String())
 	}
+	if !strings.Contains(out.String(), "read info") || !strings.Contains(out.String(), "read battery") || !strings.Contains(out.String(), "read system") {
+		t.Fatalf("missing post-pair read suggestions: %q", out.String())
+	}
 	if errOut.Len() != 0 {
 		t.Fatalf("unexpected error: %q", errOut.String())
 	}
@@ -147,6 +161,9 @@ func TestSessionLifecycleAndStreamCancellation(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "stream: stopped") {
 		t.Fatalf("missing stream output: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "authorize") || !strings.Contains(out.String(), "read info") {
+		t.Fatalf("missing lifecycle suggestions: %q", out.String())
 	}
 }
 

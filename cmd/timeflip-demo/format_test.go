@@ -62,3 +62,12 @@ func TestFormatterHandlesGenericError(t *testing.T) {
 		t.Fatalf("missing generic error: %q", errOut.String())
 	}
 }
+
+func TestFormatterPrintsSuggestions(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatter(out, &bytes.Buffer{})
+	formatter.PrintSuggestions([]string{"pair tf", "connect tf"})
+	if !strings.Contains(out.String(), "next:") || !strings.Contains(out.String(), "pair tf") || !strings.Contains(out.String(), "connect tf") {
+		t.Fatalf("missing suggestions: %q", out.String())
+	}
+}

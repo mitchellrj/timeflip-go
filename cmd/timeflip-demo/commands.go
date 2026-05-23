@@ -103,7 +103,16 @@ func runList(ctx context.Context, app *DemoApp, _ []string) error {
 		if ok {
 			app.state.SetSelectedDevice(supported[0].ID)
 			app.out.PrintLine("selected_device: " + string(supported[0].ID))
+			app.out.PrintSuggestions(deviceSelectedSuggestions(supported[0].ID))
+			return nil
 		}
+	}
+	if app.state.SelectedDeviceID == "" && len(supported) > 0 {
+		app.out.PrintSuggestions([]string{"select DEVICE_ID", "pair DEVICE_ID"})
+		return nil
+	}
+	if app.state.SelectedDeviceID != "" {
+		app.out.PrintSuggestions(deviceSelectedSuggestions(app.state.SelectedDeviceID))
 	}
 	return nil
 }
@@ -114,6 +123,7 @@ func runSelect(_ context.Context, app *DemoApp, args []string) error {
 	}
 	app.state.SetSelectedDevice(timeflip.DeviceID(args[0]))
 	app.out.PrintLine("selected_device: " + args[0])
+	app.out.PrintSuggestions(deviceSelectedSuggestions(timeflip.DeviceID(args[0])))
 	return nil
 }
 
@@ -163,6 +173,11 @@ func runPair(ctx context.Context, app *DemoApp, args []string) error {
 	app.out.Printf("pairing_completed: %v\npairing_stage: %s\n", result.Completed, result.Stage)
 	app.out.PrintStageResults(result.Stages)
 	app.out.PrintManualAction(result.ManualAction)
+	if result.ManualAction != nil {
+		app.out.PrintSuggestions([]string{"complete the manual action shown above", "connect " + string(id)})
+	} else if result.Completed {
+		app.out.PrintSuggestions(afterPairSuggestions(id))
+	}
 	return err
 }
 
@@ -241,6 +256,7 @@ func runConnect(ctx context.Context, app *DemoApp, args []string) error {
 	app.state.SetSelectedDevice(id)
 	app.state.SetSession(session)
 	app.out.PrintLine("session: open")
+	app.out.PrintSuggestions([]string{"authorize", "read info"})
 	return nil
 }
 
@@ -262,6 +278,9 @@ func runAuthorize(ctx context.Context, app *DemoApp, _ []string) error {
 	}
 	app.state.Authorized = result.Authorized
 	app.out.Printf("authorized: %v\n", result.Authorized)
+	if result.Authorized {
+		app.out.PrintSuggestions(afterAuthorizeSuggestions())
+	}
 	return nil
 }
 
@@ -275,6 +294,9 @@ func runClose(ctx context.Context, app *DemoApp, _ []string) error {
 	err := app.state.ActiveSession.Close(ctx)
 	app.state.ClearSession()
 	app.out.PrintLine("session: closed")
+	if app.state.SelectedDeviceID != "" {
+		app.out.PrintSuggestions([]string{"connect " + string(app.state.SelectedDeviceID), "unpair " + string(app.state.SelectedDeviceID)})
+	}
 	return err
 }
 
@@ -291,18 +313,21 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 		value, err := session.ReadDeviceInfo(ctx)
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"read battery", "read system", "stream"})
 		}
 		return err
 	case "battery":
 		value, err := session.ReadBattery(ctx)
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"read system", "stream"})
 		}
 		return err
 	case "system":
 		value, err := session.ReadSystemState(ctx)
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"read tap", "stream", "write name NAME"})
 		}
 		return err
 	case "history":
@@ -313,6 +338,7 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 		value, err := session.ReadHistory(ctx, req)
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"stream", "read info"})
 		}
 		return err
 	case "task":
@@ -326,12 +352,14 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 		value, err := session.ReadTaskParameters(ctx, facet, app.commandOptions())
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"read tap", "write task FACET MODE POMODORO_SECONDS"})
 		}
 		return err
 	case "tap":
 		value, err := session.ReadTapSettings(ctx, app.commandOptions())
 		if err == nil {
 			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"write tap THRESHOLD LIMIT LATENCY WINDOW", "stream"})
 		}
 		return err
 	default:
@@ -481,6 +509,7 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 	}
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
 		app.out.PrintCommandResult(result)
+		app.out.PrintSuggestions([]string{"read system", "read info", "stream"})
 	}
 	return err
 }
@@ -521,6 +550,7 @@ func runCommand(ctx context.Context, app *DemoApp, args []string) error {
 	}
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
 		app.out.PrintCommandResult(result)
+		app.out.PrintSuggestions([]string{"read system", "read info"})
 	}
 	return err
 }
@@ -541,6 +571,7 @@ func runStream(ctx context.Context, app *DemoApp, _ []string) error {
 	}
 	app.setStreamCancel(cancel)
 	app.out.PrintLine("stream: active (run stop to cancel)")
+	app.out.PrintSuggestions([]string{"stop", "close"})
 	go func() {
 		defer app.clearStream()
 		for events != nil || errs != nil {
@@ -573,7 +604,20 @@ func runStop(_ context.Context, app *DemoApp, _ []string) error {
 	}
 	app.stopStream()
 	app.out.PrintLine("stream: stopped")
+	app.out.PrintSuggestions([]string{"read info", "stream", "close"})
 	return nil
+}
+
+func deviceSelectedSuggestions(id timeflip.DeviceID) []string {
+	return []string{"pair " + string(id), "connect " + string(id)}
+}
+
+func afterPairSuggestions(id timeflip.DeviceID) []string {
+	return []string{"connect " + string(id), "authorize", "read info", "read battery", "read system"}
+}
+
+func afterAuthorizeSuggestions() []string {
+	return []string{"read info", "read battery", "read system", "stream"}
 }
 
 func runExit(_ context.Context, app *DemoApp, _ []string) error {

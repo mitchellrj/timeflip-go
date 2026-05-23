@@ -136,6 +136,7 @@ Session "1" --> "0..N" Event : streams
 
 3. Business Logic:
    - Guide the user through obvious journeys: discover devices, select a device, pair if needed, connect, authorize, inspect state, write configuration or send commands, stream events, and unpair.
+   - Suggest likely next commands after successful or recoverable milestones so the user can continue the demo journey without rereading help.
    - Display library workflow stages and manual actions as first-class outputs so unsupported OS pairing/unpairing is understandable.
    - Require explicit confirmation before disruptive operations: password change, reset task info, factory reset, and unpairing.
    - Do not infer task names, time tracking state, productivity meaning, or business interpretation from facet or tap events.
@@ -267,6 +268,9 @@ Session "1" --> "0..N" Event : streams
    - If one supported device is found and no selected device exists, offer to select it.
    - `select` requires a non-empty device ID and updates process-local state.
    - `status` prints current selected device, session open/closed, authorized flag, active stream state, and timeout settings.
+   - After listing supported devices without a selected device, suggest selecting a device ID.
+   - After selecting a device, suggest pairing or connecting that device.
+   - After auto-selecting the only supported device, suggest pairing that selected device.
 4. Edge Cases:
    - Empty scan results should print "no devices found" without treating it as an error.
    - Unsupported scan/connect behavior from the current MacOS adapter should be displayed as adapter limitation, not hidden.
@@ -285,6 +289,8 @@ Session "1" --> "0..N" Event : streams
    - Call `client.Pair(ctx, timeflip.PairRequest{DeviceID, Password, NewPassword, AllowOSPairing, Timeout: cfg.CommandTimeout})`.
    - Print every stage result with stage name, completed flag, error, and manual action.
    - Set selected device ID after a successful or recoverable pairing attempt for that device.
+   - After successful pairing, suggest connecting, authorizing, and reading configuration such as `read info`, `read battery`, and `read system`.
+   - If pairing returns a manual action, suggest completing that action before the connect/read flow.
 4. Constraints:
    - Do not echo passwords in normal output.
    - Do not store passwords after the call returns.
@@ -320,6 +326,8 @@ Session "1" --> "0..N" Event : streams
    - `connect` resolves a device ID, closes any existing active session after confirmation when needed, then calls `client.Connect`.
    - `authorize` requires an active session, prompts for six-character password, calls `session.Authorize`, and marks state authorized on success.
    - `close` stops active stream, closes the active session, clears authorization state, and prints closure status.
+   - After connect, suggest `authorize`.
+   - After authorize, suggest reading configuration and optionally starting `stream`.
 4. Edge Cases:
    - Connecting to a different device while a stream is active must stop the stream first.
    - Close must tolerate already-closed or missing sessions.
@@ -435,11 +443,13 @@ Session "1" --> "0..N" Event : streams
    - `func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult)`
    - `func (f *TextFormatter) PrintEvent(event timeflip.Event)`
    - `func (f *TextFormatter) PrintError(err error)`
+   - `func (f *TextFormatter) PrintSuggestions(commands []string)`
 3. Logic:
    - Secret input should avoid echo where terminal support exists; if standard library-only implementation cannot disable echo portably, prompt plainly and document the limitation in the demo help.
    - Manual actions print kind, description, and input key/value pairs.
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.
+   - Suggestions print as a compact "next:" block with one command per line and must not imply the suggested command has already succeeded.
 4. Constraints:
    - Do not print passwords.
    - Do not panic on nil manual actions, empty slices, or unexpected event payload types.
@@ -506,6 +516,7 @@ Session "1" --> "0..N" Event : streams
 6. Logging and Output:
    - Use human-readable terminal output suitable for manual hardware testing.
    - Print enough structured labels that users can copy results into bug reports.
+   - Print next-command suggestions after major successful milestones: list, select, pair, connect, authorize, read, stream, stop, and close.
    - Never print passwords or secret prompt values.
 
 7. Documentation:
