@@ -49,6 +49,7 @@ func (f *fakeTransport) UnpairOS(context.Context, DeviceID) (OSActionResult, err
 type fakeConnection struct {
 	mu            sync.Mutex
 	reads         map[CharacteristicID][]byte
+	readSeq       map[CharacteristicID][][]byte
 	readErrs      map[CharacteristicID]error
 	writes        []fakeWrite
 	subscriptions map[CharacteristicID]chan Notification
@@ -72,6 +73,11 @@ func (f *fakeConnection) Read(_ context.Context, ch CharacteristicID) ([]byte, e
 	}
 	if err := f.readErrs[ch]; err != nil {
 		return nil, err
+	}
+	if len(f.readSeq[ch]) > 0 {
+		payload := f.readSeq[ch][0]
+		f.readSeq[ch] = f.readSeq[ch][1:]
+		return append([]byte(nil), payload...), nil
 	}
 	return append([]byte(nil), f.reads[ch]...), nil
 }

@@ -438,6 +438,7 @@ Transport "1" --> "0..N" Connection : creates
    - `ReadDeviceInfo` must format System ID as uppercase hex code text such as `0x517D517D`, not decoded ASCII, while preserving the raw bytes in diagnostics.
    - Use command plus command-result/history characteristic for command-backed reads.
    - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the command-result payload as data, not as the two-byte write acknowledgement format used by configuration writes.
+   - Command-backed reads and writes must ignore stale command-result payloads whose first byte does not match the requested command code, waiting until timeout for a matching command-result payload.
    - History decoding must accept documented v4 single-history records of 17 bytes and full-history stream packets of 20 bytes.
    - Protocol errors from read payload decoding must include the expected payload shape, byte count, and raw bytes where available.
    - Apply global timeout or command override.

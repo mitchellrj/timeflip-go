@@ -169,11 +169,11 @@ func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts Comm
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.conn.Read(ctx, charCommandResult)
+	payload, err := s.readCommandResultFor(ctx, cmd.Code, operation)
 	if err != nil {
-		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
+		return nil, err
 	}
-	return append([]byte(nil), payload...), nil
+	return payload, nil
 }
 
 // SendCommand writes a supported command and reads the command result.
@@ -187,9 +187,9 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return CommandResult{}, wrapContextErr("send_command", s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.conn.Read(ctx, charCommandResult)
+	payload, err := s.readCommandResultFor(ctx, cmd.Code, "send_command")
 	if err != nil {
-		return CommandResult{}, wrapContextErr("send_command", s.deviceID, "", cmd.Code, err)
+		return CommandResult{}, err
 	}
 	status, err := decodeCommandStatus(payload)
 	if err != nil {
@@ -200,6 +200,27 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 		return result, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: ErrCommandRejected}
 	}
 	return result, nil
+}
+
+func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, operation string) ([]byte, error) {
+	var last []byte
+	for {
+		payload, err := s.conn.Read(ctx, charCommandResult)
+		if err != nil {
+			return nil, wrapContextErr(operation, s.deviceID, "", code, err)
+		}
+		last = append(last[:0], payload...)
+		if len(payload) > 0 && CommandCode(payload[0]) == code {
+			return append([]byte(nil), payload...), nil
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command result beginning with requested command byte", last)}
+		case <-timer.C:
+		}
+	}
 }
 
 // SetPassword sets a new six-byte password.

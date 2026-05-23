@@ -125,6 +125,23 @@ func TestReadTaskParametersUsesDataResponse(t *testing.T) {
 	}
 }
 
+func TestReadTaskParametersWaitsForMatchingCommandResponse(t *testing.T) {
+	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
+		charCommandResult: {
+			{0x19, 0x00},
+			{byte(cmdReadTask), 0x01, 0x02, 0x00, 0x00, 0x05, 0xDC, 0x00, 0x00, 0x00, 0x2A},
+		},
+	}}
+	session := newTestSession(t, conn)
+	task, err := session.ReadTaskParameters(context.Background(), 1, CommandOptions{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Facet != 1 || task.PomodoroLimitSeconds != 1500 {
+		t.Fatalf("unexpected task parameters: %+v", task)
+	}
+}
+
 func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
 		charCommandResult: {byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
@@ -139,6 +156,23 @@ func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 	}
 	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdTapRead)}) {
 		t.Fatalf("unexpected command write: %+v", conn.writes)
+	}
+}
+
+func TestReadTapSettingsWaitsForMatchingCommandResponse(t *testing.T) {
+	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
+		charCommandResult: {
+			{0x19, 0x00},
+			{byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
+		},
+	}}
+	session := newTestSession(t, conn)
+	settings, err := session.ReadTapSettings(context.Background(), CommandOptions{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Threshold != 20 || settings.Window != 30 {
+		t.Fatalf("unexpected tap settings: %+v", settings)
 	}
 }
 
