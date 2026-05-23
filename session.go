@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,11 @@ type Session struct {
 	done           chan struct{}
 }
 
+const (
+	authorizationResultWindow = 750 * time.Millisecond
+	authorizationPollInterval = 50 * time.Millisecond
+)
+
 // Authorize writes a six-byte password to the device password characteristic.
 func (s *Session) Authorize(ctx context.Context, password string) (AuthorizationResult, error) {
 	password, err := passwordOrDefault(password)
@@ -30,11 +36,7 @@ func (s *Session) Authorize(ctx context.Context, password string) (Authorization
 	if err := s.conn.Write(ctx, charPassword, []byte(password)); err != nil {
 		return AuthorizationResult{}, wrapContextErr("authorize", s.deviceID, "", 0, err)
 	}
-	payload, err := s.conn.Read(ctx, charCommandResult)
-	if err == nil && len(payload) > 0 && payload[0] == 0x02 {
-		return AuthorizationResult{}, &OperationError{Operation: "authorize", DeviceID: s.deviceID, Err: ErrAuthorizationFailed}
-	}
-	return AuthorizationResult{Authorized: true}, nil
+	return s.readAuthorizationResult(ctx)
 }
 
 func passwordOrDefault(password string) (string, error) {
@@ -45,6 +47,47 @@ func passwordOrDefault(password string) (string, error) {
 		return "", ErrInvalidInput
 	}
 	return password, nil
+}
+
+func (s *Session) readAuthorizationResult(ctx context.Context) (AuthorizationResult, error) {
+	deadline := time.NewTimer(authorizationResultWindow)
+	defer deadline.Stop()
+	var wrongPayload []byte
+	for {
+		payload, err := s.conn.Read(ctx, charCommandResult)
+		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return AuthorizationResult{}, wrapContextErr("authorize", s.deviceID, "", 0, ctxErr)
+			}
+			return AuthorizationResult{Authorized: true}, nil
+		}
+		if len(payload) == 0 {
+			return AuthorizationResult{Authorized: true}, nil
+		}
+		switch payload[0] {
+		case 0x01:
+			return AuthorizationResult{Authorized: true}, nil
+		case 0x02:
+			wrongPayload = append(wrongPayload[:0], payload...)
+		default:
+			return AuthorizationResult{Authorized: true}, nil
+		}
+
+		timer := time.NewTimer(authorizationPollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return AuthorizationResult{}, wrapContextErr("authorize", s.deviceID, "", 0, ctx.Err())
+		case <-deadline.C:
+			timer.Stop()
+			return AuthorizationResult{}, &OperationError{
+				Operation: "authorize",
+				DeviceID:  s.deviceID,
+				Err:       fmt.Errorf("%w: password check returned 0x02; raw=0x%X", ErrAuthorizationFailed, wrongPayload),
+			}
+		case <-timer.C:
+		}
+	}
 }
 
 // Close closes the session connection.

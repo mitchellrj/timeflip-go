@@ -45,6 +45,23 @@ func TestAuthorizeBlankPasswordUsesDefault(t *testing.T) {
 	}
 }
 
+func TestAuthorizeWaitsForFreshSuccessAfterStaleWrongResult(t *testing.T) {
+	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
+		charCommandResult: {
+			{0x02},
+			{0x01},
+		},
+	}}
+	session := newTestSession(t, conn)
+	result, err := session.Authorize(context.Background(), DefaultPassword)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authorized {
+		t.Fatalf("expected authorization result, got %+v", result)
+	}
+}
+
 func TestReadBattery(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
 		charBattery: {88},

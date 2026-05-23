@@ -417,6 +417,8 @@ Transport "1" --> "0..N" Connection : creates
    - Create a session with device ID, connection, default timeout, and protocol adapter.
    - Write the supplied six-byte password to password characteristic during authorization; if the supplied password is empty, write the factory default password `000000`.
    - Read command result or protected characteristic to verify authorization when possible.
+   - For password-check results, treat first byte `0x01` as authorized and first byte `0x02` as wrong password.
+   - Because the command result characteristic can briefly contain a stale previous password-check result, poll briefly after an observed `0x02` before returning authorization failure.
    - Close subscriptions and connection on `Close`.
 4. Constraints:
    - Session may keep active connection configuration and subscription handles only while open.
