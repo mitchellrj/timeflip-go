@@ -679,10 +679,14 @@ func runExit(_ context.Context, app *DemoApp, _ []string) error {
 }
 
 func parseHistoryRequest(args []string) (timeflip.HistoryRequest, error) {
-	req := timeflip.HistoryRequest{}
+	req := timeflip.HistoryRequest{StartEvent: ^uint32(0)}
 	for _, arg := range args {
 		if arg == "--all" {
 			req.All = true
+			continue
+		}
+		if strings.EqualFold(arg, "last") || strings.EqualFold(arg, "latest") {
+			req.StartEvent = ^uint32(0)
 			continue
 		}
 		value, err := parseUint32(arg, "start event")
@@ -730,7 +734,7 @@ func parseUint16(value string, label string) (uint16, error) {
 }
 
 func parseUint32(value string, label string) (uint32, error) {
-	n, err := strconv.ParseUint(value, 10, 32)
+	n, err := strconv.ParseUint(value, 0, 32)
 	if err != nil {
 		return 0, fmt.Errorf("%s must be an unsigned 32-bit integer", label)
 	}

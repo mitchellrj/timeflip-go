@@ -83,6 +83,18 @@ func TestDecodeHistoryPacket(t *testing.T) {
 	if entries[0].Facet != 1 || !entries[0].Pause || entries[0].DurationSeconds != 30 {
 		t.Fatalf("unexpected entry: %+v", entries[0])
 	}
+
+	single := payload[:17]
+	entries, stream, err = decodeHistory(single)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stream.Complete || stream.PreviousEventNumber != 0 || len(entries) != 1 {
+		t.Fatalf("unexpected single history stream=%+v entries=%d", stream, len(entries))
+	}
+	if entries[0].Facet != 1 || !entries[0].Pause || entries[0].PreviousEventNumber != 0 {
+		t.Fatalf("unexpected single entry: %+v", entries[0])
+	}
 }
 
 func TestEncodeCommandValidation(t *testing.T) {

@@ -124,7 +124,7 @@ func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]Histor
 	}
 	entries, _, err := decodeHistory(raw)
 	if err != nil {
-		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: newProtocolPayloadError("20-byte history packet from history data characteristic", raw)}
+		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: newProtocolPayloadError("17-byte single history record or 20-byte history stream packet from history data characteristic", raw)}
 	}
 	return entries, nil
 }

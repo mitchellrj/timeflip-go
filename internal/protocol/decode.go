@@ -39,7 +39,7 @@ func DecodeSystemState(payload []byte) (uint16, uint16, error) {
 
 // DecodeHistoryPacket decodes v4 history packets.
 func DecodeHistoryPacket(payload []byte) (entries []HistoryEntry, complete bool, previous uint32, err error) {
-	if len(payload) == 0 || len(payload) != 20 {
+	if len(payload) != 17 && len(payload) != 20 {
 		return nil, false, 0, ErrInvalidPayload
 	}
 	allZeroPrefix := true
@@ -50,14 +50,20 @@ func DecodeHistoryPacket(payload []byte) (entries []HistoryEntry, complete bool,
 		}
 	}
 	if allZeroPrefix {
+		if len(payload) == 17 {
+			return nil, true, 0, nil
+		}
 		return nil, true, uint32(payload[17])<<16 | uint32(payload[18])<<8 | uint32(payload[19]), nil
+	}
+	if len(payload) == 20 {
+		previous = uint32(payload[17])<<16 | uint32(payload[18])<<8 | uint32(payload[19])
 	}
 	entry := HistoryEntry{
 		EventNumber:         binary.BigEndian.Uint32(payload[0:4]),
 		Side:                payload[4],
 		MomentUnix:          binary.BigEndian.Uint64(payload[5:13]),
 		DurationSeconds:     binary.BigEndian.Uint32(payload[13:17]),
-		PreviousEventNumber: uint32(payload[17])<<16 | uint32(payload[18])<<8 | uint32(payload[19]),
+		PreviousEventNumber: previous,
 		Raw:                 append([]byte(nil), payload...),
 	}
 	return []HistoryEntry{entry}, false, entry.PreviousEventNumber, nil

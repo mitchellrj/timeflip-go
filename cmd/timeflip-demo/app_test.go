@@ -91,6 +91,23 @@ func TestHelpWriteShowsDetailedWriteUsage(t *testing.T) {
 	}
 }
 
+func TestParseHistoryRequestDefaultsToLatestEvent(t *testing.T) {
+	req, err := parseHistoryRequest(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req.StartEvent != ^uint32(0) || req.All {
+		t.Fatalf("unexpected default history request: %+v", req)
+	}
+	req, err = parseHistoryRequest([]string{"--all", "0x10"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !req.All || req.StartEvent != 0x10 {
+		t.Fatalf("unexpected all history request: %+v", req)
+	}
+}
+
 func TestListCanSelectSingleSupportedDevice(t *testing.T) {
 	transport := &fakeDemoTransport{peripherals: []timeflip.Peripheral{
 		{ID: "tf", Name: "TimeFlip2", RSSI: -42, AdvertisedServices: []timeflip.ServiceID{timeflip.TimeFlipService}},
