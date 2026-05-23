@@ -108,6 +108,57 @@ func TestReadDeviceInfoFailsWhenAllFieldsMissing(t *testing.T) {
 	}
 }
 
+func TestReadTaskParametersUsesDataResponse(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {byte(cmdReadTask), 0x01, 0x02, 0x00, 0x00, 0x05, 0xDC, 0x00, 0x00, 0x00, 0x2A},
+	}}
+	session := newTestSession(t, conn)
+	task, err := session.ReadTaskParameters(context.Background(), 1, CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Facet != 1 || task.Mode != 2 || task.PomodoroLimitSeconds != 1500 || task.ElapsedSeconds != 42 {
+		t.Fatalf("unexpected task parameters: %+v", task)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdReadTask), 0x01}) {
+		t.Fatalf("unexpected command write: %+v", conn.writes)
+	}
+}
+
+func TestReadTapSettingsUsesDataResponse(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
+	}}
+	session := newTestSession(t, conn)
+	settings, err := session.ReadTapSettings(context.Background(), CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Threshold != 20 || settings.Limit != 10 || settings.Latency != 5 || settings.Window != 30 {
+		t.Fatalf("unexpected tap settings: %+v", settings)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdTapRead)}) {
+		t.Fatalf("unexpected command write: %+v", conn.writes)
+	}
+}
+
+func TestReadHistoryProtocolErrorIncludesPayloadDetails(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charHistory: {0x01, 0x02},
+	}})
+	_, err := session.ReadHistory(context.Background(), HistoryRequest{})
+	if !errors.Is(err, ErrProtocol) {
+		t.Fatalf("expected protocol error, got %v", err)
+	}
+	var payloadErr *ProtocolPayloadError
+	if !errors.As(err, &payloadErr) {
+		t.Fatalf("expected payload details, got %v", err)
+	}
+	if payloadErr.Expected == "" || string(payloadErr.Payload) != string([]byte{0x01, 0x02}) {
+		t.Fatalf("unexpected payload error: %+v", payloadErr)
+	}
+}
+
 func TestSendCommandRejected(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
 		charCommandResult: {byte(cmdLock), 0x01},

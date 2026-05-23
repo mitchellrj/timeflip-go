@@ -437,6 +437,8 @@ Transport "1" --> "0..N" Connection : creates
    - `ReadDeviceInfo` must treat individual standard Device Information characteristics as optional: return any fields that can be read, leave unavailable fields blank, and fail only when no Device Information characteristics can be read or a non-optional transport/cancellation error occurs.
    - `ReadDeviceInfo` must format System ID as uppercase hex code text such as `0x517D517D`, not decoded ASCII, while preserving the raw bytes in diagnostics.
    - Use command plus command-result/history characteristic for command-backed reads.
+   - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the command-result payload as data, not as the two-byte write acknowledgement format used by configuration writes.
+   - Protocol errors from read payload decoding must include the expected payload shape, byte count, and raw bytes where available.
    - Apply global timeout or command override.
    - Return typed state and raw diagnostic bytes where appropriate.
 4. Edge Cases:

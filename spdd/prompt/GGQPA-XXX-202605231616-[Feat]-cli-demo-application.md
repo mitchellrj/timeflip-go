@@ -359,6 +359,7 @@ Session "1" --> "0..N" Event : streams
    - Use `timeflip.CommandOptions{Timeout: cfg.CommandTimeout}` for command-backed reads.
    - Print labeled fields and raw bytes only where the type already exposes useful diagnostics and the display remains readable.
    - Display Device Information `system_id` as hex-code text such as `0x517D517D`, not decoded ASCII.
+   - Command-backed read protocol errors should show the operation, command code when available, expected payload shape, byte count, and raw payload bytes rather than describing them as write-command acknowledgement failures.
 5. Edge Cases:
    - Validate facet values before calling library methods.
    - Validate history start event as unsigned integer.

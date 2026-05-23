@@ -124,35 +124,56 @@ func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]Histor
 	}
 	entries, _, err := decodeHistory(raw)
 	if err != nil {
-		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: err}
+		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: newProtocolPayloadError("20-byte history packet from history data characteristic", raw)}
 	}
 	return entries, nil
 }
 
 // ReadTaskParameters reads task parameters for a facet.
 func (s *Session) ReadTaskParameters(ctx context.Context, facet FacetID, opts CommandOptions) (TaskParameters, error) {
-	result, err := s.SendCommand(ctx, Command{Code: cmdReadTask, Payload: []byte{byte(facet)}}, opts)
+	payload, err := s.readCommandPayload(ctx, Command{Code: cmdReadTask, Payload: []byte{byte(facet)}}, opts, "read_task_parameters")
 	if err != nil {
 		return TaskParameters{}, err
 	}
-	if len(result.Payload) < 11 {
-		return TaskParameters{}, &OperationError{Operation: "read_task_parameters", DeviceID: s.deviceID, Err: ErrProtocol}
+	if len(payload) < 11 || CommandCode(payload[0]) != cmdReadTask {
+		return TaskParameters{}, &OperationError{Operation: "read_task_parameters", DeviceID: s.deviceID, Command: cmdReadTask, Err: newProtocolPayloadError("task response 0x14 plus 10 data bytes", payload)}
 	}
 	return TaskParameters{
-		Facet:                FacetID(result.Payload[1]),
-		Mode:                 result.Payload[2],
-		PomodoroLimitSeconds: binary.BigEndian.Uint32(result.Payload[3:7]),
-		ElapsedSeconds:       binary.BigEndian.Uint32(result.Payload[7:11]),
+		Facet:                FacetID(payload[1]),
+		Mode:                 payload[2],
+		PomodoroLimitSeconds: binary.BigEndian.Uint32(payload[3:7]),
+		ElapsedSeconds:       binary.BigEndian.Uint32(payload[7:11]),
 	}, nil
 }
 
 // ReadTapSettings reads double-tap accelerometer settings.
 func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (TapSettings, error) {
-	result, err := s.SendCommand(ctx, commandNoPayload(cmdTapRead), opts)
+	payload, err := s.readCommandPayload(ctx, commandNoPayload(cmdTapRead), opts, "read_tap_settings")
 	if err != nil {
 		return TapSettings{}, err
 	}
-	return tapSettingsFromPayload(result.Payload)
+	settings, err := tapSettingsFromPayload(payload)
+	if err != nil {
+		return TapSettings{}, &OperationError{Operation: "read_tap_settings", DeviceID: s.deviceID, Command: cmdTapRead, Err: err}
+	}
+	return settings, nil
+}
+
+func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts CommandOptions, operation string) ([]byte, error) {
+	encoded, err := encodeCommand(cmd)
+	if err != nil {
+		return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: cmd.Code, Err: ErrInvalidInput}
+	}
+	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, opts.Timeout)
+	defer cancel()
+	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
+		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
+	}
+	payload, err := s.conn.Read(ctx, charCommandResult)
+	if err != nil {
+		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
+	}
+	return append([]byte(nil), payload...), nil
 }
 
 // SendCommand writes a supported command and reads the command result.
@@ -429,8 +450,8 @@ func NotificationSourceName(ch CharacteristicID) string {
 }
 
 func tapSettingsFromPayload(payload []byte) (TapSettings, error) {
-	if len(payload) < 9 {
-		return TapSettings{}, ErrProtocol
+	if len(payload) < 9 || CommandCode(payload[0]) != cmdTapRead {
+		return TapSettings{}, newProtocolPayloadError("tap settings response 0x17 plus register/value pairs", payload)
 	}
 	return TapSettings{Threshold: payload[2], Limit: payload[4], Latency: payload[6], Window: payload[8]}, nil
 }

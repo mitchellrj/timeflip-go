@@ -88,7 +88,7 @@ func decodeCommandStatus(payload []byte) (CommandStatus, error) {
 	code, ok, err := protocol.DecodeCommandStatus(payload)
 	status := CommandStatus{Code: CommandCode(code), OK: ok, Raw: append([]byte(nil), payload...)}
 	if err != nil {
-		return status, ErrProtocol
+		return status, newProtocolPayloadError("command result status 0x02 (OK) or 0x01 (rejected)", payload)
 	}
 	return status, nil
 }
