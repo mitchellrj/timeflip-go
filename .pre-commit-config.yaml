@@ -1,0 +1,45 @@
+minimum_pre_commit_version: "4.6.0"
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+        exclude: ^(build/|frontend/dist/|frontend/node_modules/|\.venv/)
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: trailing-whitespace
+        exclude: ^(build/|frontend/dist/|frontend/node_modules/|\.venv/)
+      - id: check-executables-have-shebangs
+      - id: check-shebang-scripts-are-executable
+
+  - repo: local
+    hooks:
+      - id: python-quality
+        name: Python quality and tests
+        entry: scripts/dev/pre-commit-python.sh
+        language: system
+        pass_filenames: false
+        files: ^(src/.*\.py|tests/.*\.py|pyproject\.toml|uv\.lock)$
+      - id: frontend-quality
+        name: Frontend lint, test, accessibility, and build
+        entry: scripts/dev/pre-commit-frontend.sh
+        language: system
+        pass_filenames: false
+        files: ^frontend/
+      - id: terraform-validate
+        name: Terraform fmt, validate, and Checkov
+        entry: scripts/dev/pre-commit-terraform.sh
+        language: system
+        pass_filenames: false
+        files: ^(infra/.*\.(tf|tfvars|hcl)|\.checkov\.yaml)$
+      - id: shell-syntax
+        name: Shell syntax
+        entry: scripts/dev/pre-commit-shell.sh
+        language: system
+        files: ^scripts/.*\.sh$

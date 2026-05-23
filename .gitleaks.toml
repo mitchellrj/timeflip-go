@@ -1,0 +1,10 @@
+[allowlist]
+paths = [
+  '''^\.git/''',
+  '''^\.venv/''',
+  '''^build/''',
+  '''^frontend/dist/''',
+  '''^frontend/node_modules/''',
+  '''^infra/.*/\.terraform/''',
+  '''^strava\.com_legal_api\.pdf$'''
+]
