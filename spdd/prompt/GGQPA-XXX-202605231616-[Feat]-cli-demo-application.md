@@ -450,6 +450,8 @@ Session "1" --> "0..N" Event : streams
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.
    - Suggestions print as a compact "next:" block with one command per line and must not imply the suggested command has already succeeded.
+   - Manual OS actions must be rendered as explicit numbered user steps. For OS pairing, tell the user to keep the device nearby, open macOS System Settings > Bluetooth, connect or pair the TimeFlip2 device if shown, approve any prompt, return to the demo, then run the suggested CLI commands. For OS unpairing, tell the user how to forget/remove the device in System Settings before retrying.
+   - Unsupported OS-action stages that include a manual action should be described as "automatic OS action is not available" rather than a bare `unsupported operation` failure.
 4. Constraints:
    - Do not print passwords.
    - Do not panic on nil manual actions, empty slices, or unexpected event payload types.

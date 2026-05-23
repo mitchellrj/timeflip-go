@@ -61,7 +61,11 @@ func (f *TextFormatter) PrintStageResults(stages []timeflip.StageResult) {
 		}
 		fmt.Fprintf(f.out, "stage %s: %s\n", s.Stage, status)
 		if s.Err != nil {
-			fmt.Fprintf(f.out, "  error: %v\n", s.Err)
+			if timeflip.IsUnsupported(s.Err) && s.ManualAction != nil {
+				fmt.Fprintf(f.out, "  note: automatic %s is not available; follow the manual action below.\n", s.Stage)
+			} else {
+				fmt.Fprintf(f.out, "  error: %v\n", s.Err)
+			}
 		}
 		if s.ManualAction != nil {
 			printManualAction(f.out, s.ManualAction)
@@ -189,9 +193,7 @@ func printManualAction(w io.Writer, action *timeflip.ManualAction) {
 		return
 	}
 	fmt.Fprintf(w, "manual action: %s\n", action.Kind)
-	if action.Description != "" {
-		fmt.Fprintf(w, "  %s\n", action.Description)
-	}
+	printManualActionSteps(w, action)
 	if len(action.Inputs) > 0 {
 		keys := make([]string, 0, len(action.Inputs))
 		for k := range action.Inputs {
@@ -202,6 +204,62 @@ func printManualAction(w io.Writer, action *timeflip.ManualAction) {
 			fmt.Fprintf(w, "  %s=%s\n", k, action.Inputs[k])
 		}
 	}
+}
+
+func printManualActionSteps(w io.Writer, action *timeflip.ManualAction) {
+	steps := manualActionSteps(action)
+	if len(steps) == 0 && action.Description != "" {
+		for _, line := range strings.Split(action.Description, "\n") {
+			if strings.TrimSpace(line) != "" {
+				fmt.Fprintf(w, "  %s\n", strings.TrimSpace(line))
+			}
+		}
+		return
+	}
+	for i, step := range steps {
+		fmt.Fprintf(w, "  %d. %s\n", i+1, step)
+	}
+}
+
+func manualActionSteps(action *timeflip.ManualAction) []string {
+	if action == nil {
+		return nil
+	}
+	deviceID := action.Inputs["device_id"]
+	switch action.Kind {
+	case timeflip.ManualActionOSPair:
+		return []string{
+			"Keep the TimeFlip2 powered on and close to this Mac.",
+			"If macOS shows a Bluetooth pairing prompt while you connect, authorize, read, or write, approve it.",
+			"If no prompt appears, open System Settings > Bluetooth.",
+			"Find the TimeFlip2 device" + deviceSuffix(deviceID) + " and click Connect or Pair.",
+			"Return to this demo and run: connect " + commandDeviceID(deviceID),
+			"Then run: authorize, followed by read info, read battery, or read system.",
+		}
+	case timeflip.ManualActionOSUnpair:
+		return []string{
+			"Open System Settings > Bluetooth.",
+			"Find the TimeFlip2 device" + deviceSuffix(deviceID) + ".",
+			"Open the device details and choose Forget This Device or Remove.",
+			"Return to this demo and run: list, then pair " + commandDeviceID(deviceID) + " if you want to pair again.",
+		}
+	default:
+		return nil
+	}
+}
+
+func deviceSuffix(deviceID string) string {
+	if deviceID == "" {
+		return ""
+	}
+	return " with device ID " + deviceID
+}
+
+func commandDeviceID(deviceID string) string {
+	if deviceID == "" {
+		return "DEVICE_ID"
+	}
+	return deviceID
 }
 
 func formatMap(values map[string]string) string {

@@ -105,7 +105,10 @@ func TestPairAndUnpairManualActionOutput(t *testing.T) {
 	app, input, out, errOut := newTestApp(t, transport)
 	input.answers = []string{"000000", "n", "y"}
 	app.Execute(context.Background(), "pair tf")
-	if !strings.Contains(out.String(), "pairing_completed: true") || !strings.Contains(out.String(), "manual action") {
+	if !strings.Contains(out.String(), "pairing_completed: true") ||
+		!strings.Contains(out.String(), "manual action") ||
+		!strings.Contains(out.String(), "System Settings > Bluetooth") ||
+		!strings.Contains(out.String(), "connect tf") {
 		t.Fatalf("missing pairing output: out=%q err=%q", out.String(), errOut.String())
 	}
 	input.answers = []string{"n", "n", "y"}

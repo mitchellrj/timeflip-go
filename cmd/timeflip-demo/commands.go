@@ -174,7 +174,7 @@ func runPair(ctx context.Context, app *DemoApp, args []string) error {
 	app.out.PrintStageResults(result.Stages)
 	app.out.PrintManualAction(result.ManualAction)
 	if result.ManualAction != nil {
-		app.out.PrintSuggestions([]string{"complete the manual action shown above", "connect " + string(id)})
+		app.out.PrintSuggestions([]string{"connect " + string(id), "authorize", "read info"})
 	} else if result.Completed {
 		app.out.PrintSuggestions(afterPairSuggestions(id))
 	}

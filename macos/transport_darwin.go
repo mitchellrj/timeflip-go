@@ -231,12 +231,12 @@ func (t *Transport) lookup(id timeflip.DeviceID) (bluetooth.ScanResult, bool) {
 
 // PairOS returns a manual pairing action because direct OS pairing is not exposed safely.
 func (t *Transport) PairOS(_ context.Context, id timeflip.DeviceID) (timeflip.OSActionResult, error) {
-	return unsupportedOSAction(timeflip.ManualActionOSPair, id, "macOS may prompt for Bluetooth pairing during connect, authorization, read, or write operations. Approve the prompt or pair the TimeFlip2 device in macOS Bluetooth settings, then retry the library operation.")
+	return unsupportedOSAction(timeflip.ManualActionOSPair, id, "Automatic macOS pairing is not available from this adapter. To complete pairing: 1. Keep the TimeFlip2 powered on and nearby. 2. If macOS shows a Bluetooth pairing prompt during connect, authorize, read, or write, approve it. 3. If no prompt appears, open System Settings > Bluetooth, find the TimeFlip2 device, and click Connect or Pair. 4. Return to this demo and run the suggested connect/read commands.")
 }
 
 // UnpairOS returns a manual unpairing action because direct OS unpairing is not exposed safely.
 func (t *Transport) UnpairOS(_ context.Context, id timeflip.DeviceID) (timeflip.OSActionResult, error) {
-	return unsupportedOSAction(timeflip.ManualActionOSUnpair, id, "Remove the TimeFlip2 device in macOS Bluetooth settings.")
+	return unsupportedOSAction(timeflip.ManualActionOSUnpair, id, "Automatic macOS unpairing is not available from this adapter. To complete unpairing: 1. Open System Settings > Bluetooth. 2. Find the TimeFlip2 device. 3. Open the device details and choose Forget This Device or Remove. 4. Return to this demo and run list or pair again.")
 }
 
 func advertisedServices(result bluetooth.ScanResult) []timeflip.ServiceID {

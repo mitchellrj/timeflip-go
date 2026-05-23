@@ -25,11 +25,34 @@ func TestFormatterPrintsManualActionAndOperationError(t *testing.T) {
 		Stage:     "os_pair",
 		Err:       timeflip.ErrUnsupportedOperation,
 	})
-	if !strings.Contains(out.String(), "pair in settings") || !strings.Contains(out.String(), "device_id=tf") {
+	if !strings.Contains(out.String(), "1. Keep the TimeFlip2 powered on") ||
+		!strings.Contains(out.String(), "System Settings > Bluetooth") ||
+		!strings.Contains(out.String(), "connect tf") ||
+		!strings.Contains(out.String(), "device_id=tf") {
 		t.Fatalf("missing manual action output: %q", out.String())
 	}
 	if !strings.Contains(errOut.String(), "operation=pair") || !strings.Contains(errOut.String(), "adapter note") {
 		t.Fatalf("missing operation error output: %q", errOut.String())
+	}
+}
+
+func TestFormatterPrintsManualActionStageAsGuidance(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatter(out, &bytes.Buffer{})
+	formatter.PrintStageResults([]timeflip.StageResult{{
+		Stage:     "os_pair",
+		Completed: false,
+		Err:       timeflip.ErrUnsupportedOperation,
+		ManualAction: &timeflip.ManualAction{
+			Kind:   timeflip.ManualActionOSPair,
+			Inputs: map[string]string{"device_id": "tf"},
+		},
+	}})
+	if strings.Contains(out.String(), "error: unsupported operation") {
+		t.Fatalf("manual action stage should not print bare unsupported error: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "automatic os_pair is not available") || !strings.Contains(out.String(), "System Settings > Bluetooth") {
+		t.Fatalf("missing guided manual stage output: %q", out.String())
 	}
 }
 
