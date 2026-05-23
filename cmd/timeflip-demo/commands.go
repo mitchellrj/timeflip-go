@@ -62,6 +62,7 @@ func runHelp(_ context.Context, app *DemoApp, args []string) error {
 		app.out.Printf("  %-12s %s\n", cmd.name, cmd.description)
 	}
 	app.out.PrintLine("Password prompts use standard input; terminal echo is not disabled in this dependency-free demo.")
+	app.out.PrintLine("When running in a supported terminal, use up/down arrows for command history. Use -no-color to disable color output.")
 	return nil
 }
 

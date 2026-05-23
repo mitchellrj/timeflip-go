@@ -18,6 +18,7 @@ type DemoConfig struct {
 	EventBuffer               int
 	IncludeRawEvents          bool
 	IncludeUnsupportedDevices bool
+	NoColor                   bool
 }
 
 type DemoState struct {

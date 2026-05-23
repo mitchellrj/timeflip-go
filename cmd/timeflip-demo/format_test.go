@@ -94,3 +94,12 @@ func TestFormatterPrintsSuggestions(t *testing.T) {
 		t.Fatalf("missing suggestions: %q", out.String())
 	}
 }
+
+func TestFormatterCanColorSuggestions(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatterWithColor(out, &bytes.Buffer{}, true)
+	formatter.PrintSuggestions([]string{"pair tf"})
+	if !strings.Contains(out.String(), "\033[") || !strings.Contains(out.String(), "pair tf") {
+		t.Fatalf("missing colored suggestions: %q", out.String())
+	}
+}

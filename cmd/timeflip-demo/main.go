@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	timeflip "github.com/mitchellrj/timeflip-go"
@@ -28,7 +29,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	formatter := NewTextFormatter(os.Stdout, os.Stderr)
+	color := colorEnabled(os.Stdout, cfg.NoColor)
+	formatter := NewTextFormatterWithColor(os.Stdout, os.Stderr, color)
 	app := NewDemoApp(client, cfg, NewTerminalPrompter(os.Stdin, os.Stdout), formatter)
 	formatter.PrintLine("TimeFlip2 demo CLI. Type help for commands, exit to quit.")
 	if err := app.Run(context.Background()); err != nil {
@@ -45,6 +47,7 @@ func parseFlags(args []string) (DemoConfig, error) {
 	fs.IntVar(&cfg.EventBuffer, "event-buffer", cfg.EventBuffer, "event channel buffer size")
 	fs.BoolVar(&cfg.IncludeRawEvents, "include-raw", false, "include raw event bytes when streaming")
 	fs.BoolVar(&cfg.IncludeUnsupportedDevices, "include-unsupported", false, "include unsupported BLE devices in list output")
+	fs.BoolVar(&cfg.NoColor, "no-color", false, "disable ANSI color output")
 	if err := fs.Parse(args); err != nil {
 		return DemoConfig{}, err
 	}
@@ -58,4 +61,14 @@ func parseFlags(args []string) (DemoConfig, error) {
 		cfg.CommunicationTimeout = 10 * time.Second
 	}
 	return cfg, nil
+}
+
+func colorEnabled(out *os.File, disabled bool) bool {
+	if disabled || os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	return isTerminalFile(out)
 }

@@ -13,13 +13,18 @@ import (
 )
 
 type TextFormatter struct {
-	out io.Writer
-	err io.Writer
-	mu  sync.Mutex
+	out   io.Writer
+	err   io.Writer
+	color bool
+	mu    sync.Mutex
 }
 
 func NewTextFormatter(out io.Writer, err io.Writer) *TextFormatter {
 	return &TextFormatter{out: out, err: err}
+}
+
+func NewTextFormatterWithColor(out io.Writer, err io.Writer, color bool) *TextFormatter {
+	return &TextFormatter{out: out, err: err, color: color}
 }
 
 func (f *TextFormatter) PrintLine(line string) {
@@ -41,9 +46,13 @@ func (f *TextFormatter) PrintDevices(devices []timeflip.DiscoveredDevice) {
 		fmt.Fprintln(f.out, "no devices found")
 		return
 	}
-	fmt.Fprintln(f.out, "ID\tNAME\tRSSI\tSUPPORTED\tMETADATA")
+	fmt.Fprintln(f.out, f.style("ID\tNAME\tRSSI\tSUPPORTED\tMETADATA", ansiBold))
 	for _, d := range devices {
-		fmt.Fprintf(f.out, "%s\t%s\t%d\t%v\t%s\n", d.ID, d.Name, d.RSSI, d.Supported, formatMap(d.Metadata))
+		supported := fmt.Sprintf("%v", d.Supported)
+		if d.Supported {
+			supported = f.style(supported, ansiGreen)
+		}
+		fmt.Fprintf(f.out, "%s\t%s\t%d\t%s\t%s\n", d.ID, d.Name, d.RSSI, supported, formatMap(d.Metadata))
 	}
 }
 
@@ -56,15 +65,17 @@ func (f *TextFormatter) PrintStageResults(stages []timeflip.StageResult) {
 	}
 	for _, s := range stages {
 		status := "failed"
+		style := ansiRed
 		if s.Completed {
 			status = "completed"
+			style = ansiGreen
 		}
-		fmt.Fprintf(f.out, "stage %s: %s\n", s.Stage, status)
+		fmt.Fprintf(f.out, "stage %s: %s\n", s.Stage, f.style(status, style))
 		if s.Err != nil {
 			if timeflip.IsUnsupported(s.Err) && s.ManualAction != nil {
-				fmt.Fprintf(f.out, "  note: automatic %s is not available; follow the manual action below.\n", s.Stage)
+				fmt.Fprintf(f.out, "  %s automatic %s is not available; follow the manual action below.\n", f.style("note:", ansiYellow), s.Stage)
 			} else {
-				fmt.Fprintf(f.out, "  error: %v\n", s.Err)
+				fmt.Fprintf(f.out, "  %s %v\n", f.style("error:", ansiRed), s.Err)
 			}
 		}
 		if s.ManualAction != nil {
@@ -87,7 +98,7 @@ func (f *TextFormatter) PrintReadResult(value any) {
 		fmt.Fprintf(f.out, "name: %s\nmanufacturer: %s\nmodel: %s\nhardware: %s\nfirmware: %s\nsystem_id: %s\n",
 			v.Name, v.ManufacturerName, v.ModelNumber, v.HardwareRevision, v.FirmwareRevision, v.SystemID)
 	case timeflip.BatteryStatus:
-		fmt.Fprintf(f.out, "battery: %d%%\n", v.Percentage)
+		fmt.Fprintf(f.out, "%s %d%%\n", f.style("battery:", ansiCyan), v.Percentage)
 	case timeflip.SystemState:
 		fmt.Fprintf(f.out, "status_code: 0x%04X\nhardware_code: 0x%04X\nsync_required: %v\nreset: %v\nhardware_issue: %v\n",
 			v.StatusCode, v.HardwareCode, v.SyncRequired, v.Reset, v.HardwareIssue)
@@ -151,7 +162,7 @@ func (f *TextFormatter) PrintError(err error) {
 	defer f.mu.Unlock()
 	var opErr *timeflip.OperationError
 	if errors.As(err, &opErr) {
-		fmt.Fprintf(f.err, "error: operation=%s", opErr.Operation)
+		fmt.Fprintf(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
 		if opErr.Stage != "" {
 			fmt.Fprintf(f.err, " stage=%s", opErr.Stage)
 		}
@@ -170,7 +181,7 @@ func (f *TextFormatter) PrintError(err error) {
 		}
 		return
 	}
-	fmt.Fprintf(f.err, "error: %v\n", err)
+	fmt.Fprintf(f.err, "%s %v\n", f.style("error:", ansiRed), err)
 }
 
 func (f *TextFormatter) PrintSuggestions(commands []string) {
@@ -179,13 +190,29 @@ func (f *TextFormatter) PrintSuggestions(commands []string) {
 	if len(commands) == 0 {
 		return
 	}
-	fmt.Fprintln(f.out, "next:")
+	fmt.Fprintln(f.out, f.style("next:", ansiCyan))
 	for _, command := range commands {
 		if strings.TrimSpace(command) == "" {
 			continue
 		}
-		fmt.Fprintf(f.out, "  %s\n", command)
+		fmt.Fprintf(f.out, "  %s\n", f.style(command, ansiBold))
 	}
+}
+
+const (
+	ansiReset  = "\033[0m"
+	ansiBold   = "\033[1m"
+	ansiRed    = "\033[31m"
+	ansiGreen  = "\033[32m"
+	ansiYellow = "\033[33m"
+	ansiCyan   = "\033[36m"
+)
+
+func (f *TextFormatter) style(value string, code string) string {
+	if !f.color || value == "" {
+		return value
+	}
+	return code + value + ansiReset
 }
 
 func printManualAction(w io.Writer, action *timeflip.ManualAction) {

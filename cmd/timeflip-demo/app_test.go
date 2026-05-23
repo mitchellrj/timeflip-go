@@ -14,11 +14,11 @@ import (
 )
 
 func TestParseFlags(t *testing.T) {
-	cfg, err := parseFlags([]string{"-timeout", "3s", "-command-timeout", "2s", "-event-buffer", "4", "-include-raw", "-include-unsupported"})
+	cfg, err := parseFlags([]string{"-timeout", "3s", "-command-timeout", "2s", "-event-buffer", "4", "-include-raw", "-include-unsupported", "-no-color"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.CommunicationTimeout != 3*time.Second || cfg.CommandTimeout != 2*time.Second || cfg.EventBuffer != 4 || !cfg.IncludeRawEvents || !cfg.IncludeUnsupportedDevices {
+	if cfg.CommunicationTimeout != 3*time.Second || cfg.CommandTimeout != 2*time.Second || cfg.EventBuffer != 4 || !cfg.IncludeRawEvents || !cfg.IncludeUnsupportedDevices || !cfg.NoColor {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 	if _, err := parseFlags([]string{"-event-buffer", "-1"}); err == nil {

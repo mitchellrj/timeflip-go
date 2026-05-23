@@ -53,6 +53,7 @@ Useful startup flags:
 - `-event-buffer 16`: event channel buffer size.
 - `-include-raw`: print raw event bytes while streaming.
 - `-include-unsupported`: include unsupported BLE devices in scan output.
+- `-no-color`: disable ANSI color output.
 
 Inside the prompt, use `help` to see commands. A typical smoke-test path is:
 
@@ -70,6 +71,8 @@ close
 unpair
 exit
 ```
+
+When running in a supported terminal, the demo keeps in-process command history for the main prompt and supports up/down arrows. Output uses ANSI colors when stdout is a TTY; use `-no-color` or `NO_COLOR=1` to disable color.
 
 The demo also exposes `read system`, `read history`, `read task FACET`, `read tap`, writable configuration through `write ...`, and reset commands through `command ...`. Destructive operations such as password changes, task reset, factory reset, and unpairing ask for confirmation.
 

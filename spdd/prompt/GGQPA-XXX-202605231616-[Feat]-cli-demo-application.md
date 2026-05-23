@@ -132,6 +132,8 @@ Session "1" --> "0..N" Event : streams
    - Instantiate `timeflip.NewClient(macos.NewTransport(), timeflip.Config{CommunicationTimeout: flagValue})` from the demo entrypoint.
    - Model current device selection, active session, authorization flag, and active event stream cancellation as process-local demo state.
    - Allow a global `-timeout` flag for client communication timeout, a `-command-timeout` flag for command operations, an `-event-buffer` flag for streaming buffer size, an `-include-raw` flag for event display, and an `-include-unsupported` flag for discovery diagnostics.
+   - Allow a `-no-color` flag to disable ANSI color output. Color should be enabled by default only when stdout is a supported TTY.
+   - Maintain in-process command history for the interactive prompt when stdin/stdout are a supported TTY, with up/down arrow navigation through previous commands.
    - Print contextual errors without terminating the prompt when recovery is possible; exit non-zero only for startup configuration failure or non-interactive fatal setup failure.
 
 3. Business Logic:
@@ -446,6 +448,9 @@ Session "1" --> "0..N" Event : streams
    - `func (f *TextFormatter) PrintSuggestions(commands []string)`
 3. Logic:
    - Secret input should avoid echo where terminal support exists; if standard library-only implementation cannot disable echo portably, prompt plainly and document the limitation in the demo help.
+   - Interactive command prompts should use raw terminal input with history only when stdin and stdout are TTYs that support it. Non-TTY input must fall back to buffered line reads.
+   - Up and down arrows should navigate command history for the main `timeflip>` prompt. Secret prompts and confirmation prompts must not be added to command history.
+   - Color output should be limited to terminal-friendly ANSI colors and must be disabled automatically for non-TTY output or explicitly with `-no-color`.
    - Manual actions print kind, description, and input key/value pairs.
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.

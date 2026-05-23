@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -16,13 +17,23 @@ type InputPrompter interface {
 type TerminalPrompter struct {
 	reader *bufio.Reader
 	out    io.Writer
+	editor *lineEditor
 }
 
 func NewTerminalPrompter(in io.Reader, out io.Writer) *TerminalPrompter {
-	return &TerminalPrompter{reader: bufio.NewReader(in), out: out}
+	p := &TerminalPrompter{reader: bufio.NewReader(in), out: out}
+	inFile, inOK := in.(*os.File)
+	outFile, outOK := out.(*os.File)
+	if inOK && outOK && isTerminalFile(inFile) && isTerminalFile(outFile) {
+		p.editor = newLineEditor(inFile, outFile)
+	}
+	return p
 }
 
 func (p *TerminalPrompter) Prompt(label string) (string, error) {
+	if p.editor != nil {
+		return p.editor.ReadLine(label, label == "timeflip> ", true)
+	}
 	if label != "" {
 		if _, err := fmt.Fprint(p.out, label); err != nil {
 			return "", err
@@ -39,8 +50,9 @@ func (p *TerminalPrompter) Prompt(label string) (string, error) {
 }
 
 func (p *TerminalPrompter) PromptSecret(label string) (string, error) {
-	// Standard-library only: this intentionally uses the same reader path as
-	// Prompt. The help text warns that terminal echo is not disabled here.
+	if p.editor != nil {
+		return p.editor.ReadLine(label, false, false)
+	}
 	return p.Prompt(label)
 }
 
