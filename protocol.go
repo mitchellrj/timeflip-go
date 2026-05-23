@@ -85,10 +85,11 @@ func encodeCommand(cmd Command) ([]byte, error) {
 
 func decodeCommandStatus(payload []byte) (CommandStatus, error) {
 	code, ok, err := protocol.DecodeCommandStatus(payload)
+	status := CommandStatus{Code: CommandCode(code), OK: ok, Raw: append([]byte(nil), payload...)}
 	if err != nil {
-		return CommandStatus{}, ErrProtocol
+		return status, ErrProtocol
 	}
-	return CommandStatus{Code: CommandCode(code), OK: ok, Raw: append([]byte(nil), payload...)}, nil
+	return status, nil
 }
 
 func decodeTrackerStatus(payload []byte) (TrackerStatus, error) {

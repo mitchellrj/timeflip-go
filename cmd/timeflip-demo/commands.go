@@ -515,7 +515,9 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 	}
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
 		app.out.PrintCommandResult(result)
-		app.out.PrintSuggestions([]string{"read system", "read info", "stream"})
+		if err == nil {
+			app.out.PrintSuggestions([]string{"read system", "read info", "stream"})
+		}
 	}
 	return err
 }
@@ -599,7 +601,9 @@ func runCommand(ctx context.Context, app *DemoApp, args []string) error {
 	}
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
 		app.out.PrintCommandResult(result)
-		app.out.PrintSuggestions([]string{"read system", "read info"})
+		if err == nil {
+			app.out.PrintSuggestions([]string{"read system", "read info"})
+		}
 	}
 	return err
 }

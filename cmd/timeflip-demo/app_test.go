@@ -218,6 +218,26 @@ func TestReadAndWriteValidation(t *testing.T) {
 	}
 }
 
+func TestWriteDoesNotSuggestSuccessPathAfterMalformedAcknowledgement(t *testing.T) {
+	conn := &fakeDemoConnection{readPayload: []byte{0x15, 0x00}}
+	app, _, out, errOut := newTestApp(t, &fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}})
+	app.Execute(context.Background(), "select tf")
+	app.Execute(context.Background(), "connect")
+	out.Reset()
+	errOut.Reset()
+	app.Execute(context.Background(), `write name "Mitch's TimeFlip"`)
+	output := out.String()
+	if !strings.Contains(output, "acknowledgement: unexpected") || !strings.Contains(output, "raw_payload_hex: 1500") {
+		t.Fatalf("missing malformed acknowledgement output: %q", output)
+	}
+	if strings.Contains(output, "next:") {
+		t.Fatalf("write failure should not print success suggestions: %q", output)
+	}
+	if !strings.Contains(errOut.String(), "unexpected acknowledgement") || !strings.Contains(errOut.String(), "device names must be 1-18 ASCII characters") {
+		t.Fatalf("missing command error guidance: %q", errOut.String())
+	}
+}
+
 func newTestApp(t *testing.T, transport timeflip.Transport) (*DemoApp, *scriptedPrompter, *bytes.Buffer, *bytes.Buffer) {
 	t.Helper()
 	client, err := timeflip.NewClient(transport, timeflip.Config{})
@@ -304,9 +324,13 @@ type fakeDemoConnection struct {
 	mu            sync.Mutex
 	subscriptions []chan timeflip.Notification
 	closed        bool
+	readPayload   []byte
 }
 
 func (f *fakeDemoConnection) Read(context.Context, timeflip.CharacteristicID) ([]byte, error) {
+	if f.readPayload != nil {
+		return append([]byte(nil), f.readPayload...), nil
+	}
 	return []byte{0, 0, 0, 0}, nil
 }
 

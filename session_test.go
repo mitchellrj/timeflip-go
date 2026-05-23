@@ -93,6 +93,19 @@ func TestSendCommandRejected(t *testing.T) {
 	}
 }
 
+func TestSendCommandMalformedStatusPreservesPayload(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {byte(cmdName), 0x00},
+	}})
+	result, err := session.SetName(context.Background(), "Desk Timer", CommandOptions{})
+	if !errors.Is(err, ErrProtocol) {
+		t.Fatalf("expected protocol error, got %v", err)
+	}
+	if string(result.Payload) != string([]byte{byte(cmdName), 0x00}) || string(result.Status.Raw) != string([]byte{byte(cmdName), 0x00}) {
+		t.Fatalf("expected raw malformed command payload to be preserved, got result=%+v", result)
+	}
+}
+
 func TestEventsDecodeAndCloseOnCancel(t *testing.T) {
 	conn := &fakeConnection{}
 	session := newTestSession(t, conn)

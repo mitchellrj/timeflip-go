@@ -170,7 +170,7 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 	}
 	status, err := decodeCommandStatus(payload)
 	if err != nil {
-		return CommandResult{Command: cmd, Payload: payload}, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: err}
+		return CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), payload...)}, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: err}
 	}
 	result := CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), payload...)}
 	if !status.OK {

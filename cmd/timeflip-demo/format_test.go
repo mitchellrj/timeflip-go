@@ -99,6 +99,54 @@ func TestFormatterPrintsStreamDecodeWarning(t *testing.T) {
 	}
 }
 
+func TestFormatterPrintsMalformedCommandAcknowledgement(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatter(out, &bytes.Buffer{})
+	formatter.PrintCommandResult(timeflip.CommandResult{
+		Command: timeflip.Command{Code: timeflip.CommandCode(0x15)},
+		Status:  timeflip.CommandStatus{Code: timeflip.CommandCode(0x15), Raw: []byte{0x15, 0x00}},
+		Payload: []byte{0x15, 0x00},
+	})
+	output := out.String()
+	for _, want := range []string{
+		"command: 0x15",
+		"acknowledgement: unexpected",
+		"status_code: 0x00",
+		"expected_status: 0x02 OK or 0x01 rejected",
+		"raw_payload_hex: 1500",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("malformed command output missing %q in %q", want, output)
+		}
+	}
+	if strings.Contains(output, "ok: false") {
+		t.Fatalf("malformed command output should not look like a normal false result: %q", output)
+	}
+}
+
+func TestFormatterPrintsCommandProtocolErrorGuidance(t *testing.T) {
+	errOut := &bytes.Buffer{}
+	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)
+	formatter.PrintError(&timeflip.OperationError{
+		Operation: "send_command",
+		DeviceID:  "tf",
+		Command:   timeflip.CommandCode(0x15),
+		Err:       timeflip.ErrProtocol,
+	})
+	output := errOut.String()
+	for _, want := range []string{
+		"command error:",
+		"unexpected acknowledgement",
+		"command 0x15",
+		"status 0x02 (OK) or 0x01 (rejected)",
+		"device names must be 1-18 ASCII characters",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("command guidance missing %q in %q", want, output)
+		}
+	}
+}
+
 func TestFormatterHandlesGenericError(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)

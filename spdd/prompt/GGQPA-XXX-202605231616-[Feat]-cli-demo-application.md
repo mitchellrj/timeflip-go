@@ -395,6 +395,8 @@ Session "1" --> "0..N" Event : streams
      - `SetTaskParameters`
      - `SetTapSettings`
    - Print command status, command code, OK flag, payload length, and any contextual error.
+   - Failed command/write operations that return a command-result payload must still print the raw acknowledgement, but must not print success-path `next:` suggestions.
+   - Malformed command acknowledgements must be labeled as unexpected, include the raw payload hex, and explain that status `0x02` means OK while `0x01` means rejected.
 5. Constraints:
    - Password writes require confirmation and secret input.
    - Value ranges must align with existing library validation where known; invalid input should be caught before the library call when practical.
@@ -457,6 +459,7 @@ Session "1" --> "0..N" Event : streams
    - Manual actions print kind, description, and input key/value pairs.
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.
+   - `send_command` protocol errors should be worded as unexpected command acknowledgements rather than bare protocol failures; include the expected status values and a practical next step such as checking authorization or retrying a simple valid name for name writes.
    - Event-stream protocol errors should be worded as non-fatal decode warnings when possible, for example "stream warning: could not decode history notification; streaming continues".
    - Suggestions print as a compact "next:" block with one command per line and must not imply the suggested command has already succeeded.
    - Manual OS actions must be rendered as explicit numbered user steps. For OS pairing, tell the user to keep the device nearby, open macOS System Settings > Bluetooth, connect or pair the TimeFlip2 device if shown, approve any prompt, return to the demo, then run the suggested CLI commands. For OS unpairing, tell the user how to forget/remove the device in System Settings before retrying.

@@ -124,8 +124,32 @@ func (f *TextFormatter) PrintReadResult(value any) {
 func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintf(f.out, "command: 0x%02X\nok: %v\nstatus_code: 0x%02X\npayload_bytes: %d\n",
-		byte(result.Command.Code), result.Status.OK, byte(result.Status.Code), len(result.Payload))
+	payload := result.Payload
+	if len(payload) == 0 {
+		payload = result.Status.Raw
+	}
+	fmt.Fprintf(f.out, "command: 0x%02X\n", byte(result.Command.Code))
+	if !commandStatusRecognized(payload) {
+		fmt.Fprintln(f.out, "acknowledgement: unexpected")
+		if len(payload) >= 2 {
+			fmt.Fprintf(f.out, "status_code: 0x%02X\n", payload[1])
+		}
+		fmt.Fprintln(f.out, "expected_status: 0x02 OK or 0x01 rejected")
+		fmt.Fprintf(f.out, "payload_bytes: %d\n", len(payload))
+		if len(payload) > 0 {
+			fmt.Fprintf(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
+		}
+		return
+	}
+	acknowledgement := "rejected"
+	if result.Status.OK {
+		acknowledgement = "ok"
+	}
+	fmt.Fprintf(f.out, "acknowledgement: %s\nstatus_code: 0x%02X\npayload_bytes: %d\n",
+		acknowledgement, payload[1], len(payload))
+	if len(payload) > 0 {
+		fmt.Fprintf(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
+	}
 }
 
 func (f *TextFormatter) PrintEvent(event timeflip.Event) {
@@ -183,6 +207,25 @@ func (f *TextFormatter) PrintError(err error) {
 			fmt.Fprintf(f.err, "  detail: %v\n", opErr.Err)
 			return
 		}
+		if opErr.Operation == "send_command" && errors.Is(err, timeflip.ErrProtocol) {
+			fmt.Fprintf(f.err, "%s device returned an unexpected acknowledgement", f.style("command error:", ansiRed))
+			if opErr.DeviceID != "" {
+				fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+			}
+			if opErr.Command != 0 {
+				fmt.Fprintf(f.err, " for command 0x%02X", byte(opErr.Command))
+			}
+			fmt.Fprintln(f.err, ".")
+			fmt.Fprintln(f.err, "  expected: command result status 0x02 (OK) or 0x01 (rejected)")
+			fmt.Fprintln(f.err, "  meaning: the command reached the device, but its acknowledgement was not one this library can treat as success")
+			fmt.Fprintf(f.err, "  detail: %v\n", opErr.Err)
+			if byte(opErr.Command) == 0x15 {
+				fmt.Fprintln(f.err, "  name note: device names must be 1-18 ASCII characters; if the name already fits, try authorize, read system, then retry with a simple test name")
+			} else {
+				fmt.Fprintln(f.err, "  next: check authorization/lock state with read system, then retry the command")
+			}
+			return
+		}
 		fmt.Fprintf(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
 		if opErr.Stage != "" {
 			fmt.Fprintf(f.err, " stage=%s", opErr.Stage)
@@ -203,6 +246,13 @@ func (f *TextFormatter) PrintError(err error) {
 		return
 	}
 	fmt.Fprintf(f.err, "%s %v\n", f.style("error:", ansiRed), err)
+}
+
+func commandStatusRecognized(payload []byte) bool {
+	if len(payload) < 2 {
+		return false
+	}
+	return payload[1] == 0x02 || payload[1] == 0x01
 }
 
 func eventTitle(kind timeflip.EventKind) string {

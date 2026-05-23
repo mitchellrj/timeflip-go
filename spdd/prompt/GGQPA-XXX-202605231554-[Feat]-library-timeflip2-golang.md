@@ -464,6 +464,7 @@ Transport "1" --> "0..N" Connection : creates
    - Write encoded command to command characteristic.
    - Read command result output or command status as documented.
    - Return `ErrCommandRejected` when device reports command error.
+   - Preserve raw command-result payload bytes in `CommandResult.Payload` and `CommandResult.Status.Raw` even when the acknowledgement status byte is malformed and `ErrProtocol` is returned.
 4. Constraints:
    - Do not implement firmware update or firmware-loader command as a public supported command.
    - Do not classify operations by sensitivity; all caller-accessible operations follow the same validation and result pattern.
