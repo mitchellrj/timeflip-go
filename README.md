@@ -6,7 +6,9 @@ The library is intentionally stateless: it does not store device IDs, passwords,
 
 ## Current Status
 
-The core API, protocol model, workflow orchestration, fake transport, examples, and tests are in place. The `macos` package currently provides the adapter boundary and manual-action behavior for OS pairing/unpairing; a concrete CoreBluetooth-backed implementation can fill in scan/connect/read/write/subscribe behavior behind the same transport interface.
+The core API, protocol model, workflow orchestration, fake transport, examples, and tests are in place. The `macos` package provides the first concrete BLE transport using CoreBluetooth through `tinygo.org/x/bluetooth`, so MacOS callers can scan, connect, read, write, and subscribe through the same platform-neutral transport interface.
+
+MacOS may ask for Bluetooth permission the first time an app or terminal process uses the adapter. If access is denied, enable Bluetooth access for the calling app in System Settings and retry. The adapter keeps discovered peripheral lookup only in the active process memory and does not persist device IDs, passwords, payloads, or authorization state.
 
 ## Basic Usage
 
@@ -71,7 +73,7 @@ exit
 
 The demo also exposes `read system`, `read history`, `read task FACET`, `read tap`, writable configuration through `write ...`, and reset commands through `command ...`. Destructive operations such as password changes, task reset, factory reset, and unpairing ask for confirmation.
 
-The current `macos` package is still an adapter boundary: it may report unsupported scan/connect behavior until a concrete CoreBluetooth-backed implementation is added. Those unsupported results are surfaced by the demo as adapter limitations, not hidden as generic failures.
+On MacOS, the demo uses the real CoreBluetooth-backed adapter. On other platforms, the `macos` package still compiles but reports unsupported scan/connect behavior. OS-level pairing and unpairing may still require manual action in macOS Bluetooth settings; the library reports those actions explicitly instead of claiming direct OS changes were performed.
 
 ## Examples
 
