@@ -36,6 +36,43 @@ The client has one global communication timeout. Commands may provide a `Command
 
 Events are technical device events delivered through Go channels. The library does not interpret a facet as a task, stop/start time tracking, or perform business decisions for consuming applications.
 
+## Interactive Demo
+
+Run the demo CLI with:
+
+```sh
+go run ./cmd/timeflip-demo
+```
+
+Useful startup flags:
+
+- `-timeout 10s`: global communication timeout.
+- `-command-timeout 5s`: per-command timeout override.
+- `-event-buffer 16`: event channel buffer size.
+- `-include-raw`: print raw event bytes while streaming.
+- `-include-unsupported`: include unsupported BLE devices in scan output.
+
+Inside the prompt, use `help` to see commands. A typical smoke-test path is:
+
+```text
+list
+select DEVICE_ID
+pair
+connect
+authorize
+read info
+read battery
+stream
+stop
+close
+unpair
+exit
+```
+
+The demo also exposes `read system`, `read history`, `read task FACET`, `read tap`, writable configuration through `write ...`, and reset commands through `command ...`. Destructive operations such as password changes, task reset, factory reset, and unpairing ask for confirmation.
+
+The current `macos` package is still an adapter boundary: it may report unsupported scan/connect behavior until a concrete CoreBluetooth-backed implementation is added. Those unsupported results are surfaced by the demo as adapter limitations, not hidden as generic failures.
+
 ## Examples
 
 - `examples/basic`: create a client and list devices.
