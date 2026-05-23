@@ -314,7 +314,7 @@ func (s *Session) Events(ctx context.Context, opts EventOptions) (<-chan Event, 
 }
 
 func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, error) {
-	event := Event{DeviceID: s.deviceID, ReceivedAt: time.Now()}
+	event := Event{DeviceID: s.deviceID, Source: n.Characteristic, ReceivedAt: time.Now()}
 	if includeRaw {
 		event.Raw = append([]byte(nil), n.Payload...)
 	}
@@ -322,29 +322,63 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 	case charFacets:
 		payload, err := decodeFacet(n.Payload)
 		event.Kind, event.Payload = EventFacet, payload
-		return event, err
+		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charDoubleTap:
 		payload, err := decodeDoubleTap(n.Payload)
 		event.Kind, event.Payload = EventDoubleTap, payload
-		return event, err
+		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charBattery:
 		payload, err := decodeBattery(n.Payload)
 		event.Kind, event.Payload = EventBattery, payload
-		return event, err
+		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charSystemState:
 		payload, err := decodeSystemState(n.Payload)
 		event.Kind, event.Payload = EventSystemState, payload
-		return event, err
+		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
+	case charEvents:
+		payload := append([]byte(nil), n.Payload...)
+		event.Kind, event.Payload = EventRaw, payload
+		if len(event.Raw) == 0 {
+			event.Raw = payload
+		}
+		return event, nil
 	case charHistory:
 		payload, _, err := decodeHistory(n.Payload)
 		event.Kind, event.Payload = EventHistory, payload
-		return event, err
+		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	default:
 		if includeRaw {
 			event.Kind, event.Payload = EventRaw, append([]byte(nil), n.Payload...)
 			return event, nil
 		}
-		return Event{}, &OperationError{Operation: "events", DeviceID: s.deviceID, Err: ErrProtocol}
+		return Event{}, &OperationError{Operation: "events", DeviceID: s.deviceID, Stage: NotificationSourceName(n.Characteristic), Err: ErrProtocol}
+	}
+}
+
+func notificationDecodeErr(deviceID DeviceID, ch CharacteristicID, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &OperationError{Operation: "events", DeviceID: deviceID, Stage: NotificationSourceName(ch), Err: err}
+}
+
+// NotificationSourceName returns a readable label for a notification characteristic.
+func NotificationSourceName(ch CharacteristicID) string {
+	switch ch {
+	case charFacets:
+		return "facet"
+	case charDoubleTap:
+		return "double_tap"
+	case charBattery:
+		return "battery"
+	case charSystemState:
+		return "system_state"
+	case charEvents:
+		return "timeflip_events"
+	case charHistory:
+		return "history"
+	default:
+		return string(ch)
 	}
 }
 

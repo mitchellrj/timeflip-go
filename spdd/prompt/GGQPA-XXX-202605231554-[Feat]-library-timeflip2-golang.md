@@ -476,6 +476,8 @@ Transport "1" --> "0..N" Connection : creates
 3. Logic:
    - Subscribe to facet, double-tap, battery, system-state, TimeFlip events, and history notifications where supported.
    - Decode each notification into typed technical events.
+   - TimeFlip events characteristic notifications that do not have a higher-level typed decoder must be emitted as raw technical events instead of surfacing as protocol errors.
+   - Event decode errors must include the notification source/characteristic context so consumers can distinguish malformed facet, double-tap, battery, system-state, TimeFlip events, and history notifications.
    - Send unknown but well-formed notifications as raw events when `IncludeRaw` is true.
    - Close event and error channels on context cancellation, subscription failure, session close, or disconnect.
 4. Edge Cases:

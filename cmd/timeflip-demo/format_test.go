@@ -62,6 +62,7 @@ func TestFormatterPrintsEventVariants(t *testing.T) {
 	formatter.PrintEvent(timeflip.Event{
 		Kind:       timeflip.EventFacet,
 		DeviceID:   "tf",
+		Source:     timeflip.CharacteristicID("facet-source"),
 		ReceivedAt: time.Unix(0, 0).UTC(),
 		Payload:    timeflip.FacetEvent{Facet: 3},
 		Raw:        []byte{3},
@@ -69,11 +70,32 @@ func TestFormatterPrintsEventVariants(t *testing.T) {
 	formatter.PrintEvent(timeflip.Event{
 		Kind:       timeflip.EventDoubleTap,
 		DeviceID:   "tf",
+		Source:     timeflip.CharacteristicID("tap-source"),
 		ReceivedAt: time.Unix(0, 0).UTC(),
 		Payload:    timeflip.DoubleTapEvent{Facet: 4, Pause: true},
 	})
-	if !strings.Contains(out.String(), "facet=3") || !strings.Contains(out.String(), "raw=03") || !strings.Contains(out.String(), "pause=true") {
+	if !strings.Contains(out.String(), "event: orientation / facet changed") ||
+		!strings.Contains(out.String(), "source: facet-source") ||
+		!strings.Contains(out.String(), "facet: 3") ||
+		!strings.Contains(out.String(), "raw_hex: 03") ||
+		!strings.Contains(out.String(), "pause_encoded: true") {
 		t.Fatalf("missing event output: %q", out.String())
+	}
+}
+
+func TestFormatterPrintsStreamDecodeWarning(t *testing.T) {
+	errOut := &bytes.Buffer{}
+	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)
+	formatter.PrintError(&timeflip.OperationError{
+		Operation: "events",
+		DeviceID:  "tf",
+		Stage:     "history",
+		Err:       timeflip.ErrProtocol,
+	})
+	if !strings.Contains(errOut.String(), "stream warning:") ||
+		!strings.Contains(errOut.String(), "could not decode history notification") ||
+		!strings.Contains(errOut.String(), "streaming continues") {
+		t.Fatalf("missing stream warning: %q", errOut.String())
 	}
 }
 

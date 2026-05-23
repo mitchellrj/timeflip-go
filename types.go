@@ -306,6 +306,7 @@ const (
 type Event struct {
 	Kind       EventKind
 	DeviceID   DeviceID
+	Source     CharacteristicID
 	ReceivedAt time.Time
 	Payload    any
 	Raw        []byte

@@ -122,3 +122,41 @@ func TestEventsDecodeAndCloseOnCancel(t *testing.T) {
 		t.Fatal("timed out waiting for close")
 	}
 }
+
+func TestEventsTimeFlipEventsCharacteristicEmitsRawEvent(t *testing.T) {
+	conn := &fakeConnection{}
+	session := newTestSession(t, conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, errs, err := session.Events(ctx, EventOptions{Buffer: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.subscriptions[charEvents] <- Notification{Characteristic: charEvents, Payload: []byte{0xAA, 0x01}}
+	select {
+	case event := <-events:
+		if event.Kind != EventRaw || event.Source != charEvents {
+			t.Fatalf("unexpected event: %+v", event)
+		}
+		payload, ok := event.Payload.([]byte)
+		if !ok || len(payload) != 2 || payload[0] != 0xAA || payload[1] != 0x01 {
+			t.Fatalf("unexpected raw payload: %#v", event.Payload)
+		}
+	case err := <-errs:
+		t.Fatalf("unexpected stream error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for raw event")
+	}
+}
+
+func TestNotificationDecodeErrorIncludesSource(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	_, err := session.decodeNotification(Notification{Characteristic: charHistory, Payload: []byte{0x01}}, false)
+	var opErr *OperationError
+	if !errors.As(err, &opErr) {
+		t.Fatalf("expected operation error, got %v", err)
+	}
+	if opErr.Operation != "events" || opErr.Stage != "history" {
+		t.Fatalf("unexpected error context: %+v", opErr)
+	}
+}

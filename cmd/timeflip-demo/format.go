@@ -131,26 +131,38 @@ func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult) {
 func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintf(f.out, "event kind=%s device=%s received=%s\n", event.Kind, event.DeviceID, event.ReceivedAt.Format("2006-01-02T15:04:05Z07:00"))
+	fmt.Fprintf(f.out, "%s %s\n", f.style("event:", ansiGreen), eventTitle(event.Kind))
+	fmt.Fprintf(f.out, "  device: %s\n", event.DeviceID)
+	fmt.Fprintf(f.out, "  source: %s\n", eventSourceLabel(event))
+	fmt.Fprintf(f.out, "  received: %s\n", event.ReceivedAt.Format("2006-01-02T15:04:05Z07:00"))
 	switch v := event.Payload.(type) {
 	case timeflip.FacetEvent:
-		fmt.Fprintf(f.out, "  facet=%d undefined=%v wrong_password=%v\n", v.Facet, v.Undefined, v.WrongPassword)
+		status := "valid"
+		if v.Undefined {
+			status = "undefined"
+		}
+		if v.WrongPassword {
+			status = "wrong_password_or_locked"
+		}
+		fmt.Fprintf(f.out, "  facet: %d\n  state: %s\n", v.Facet, status)
 	case timeflip.DoubleTapEvent:
-		fmt.Fprintf(f.out, "  facet=%d pause=%v\n", v.Facet, v.Pause)
+		fmt.Fprintf(f.out, "  facet: %d\n  pause_encoded: %v\n", v.Facet, v.Pause)
 	case timeflip.BatteryStatus:
-		fmt.Fprintf(f.out, "  battery=%d%%\n", v.Percentage)
+		fmt.Fprintf(f.out, "  battery: %d%%\n", v.Percentage)
 	case timeflip.SystemState:
-		fmt.Fprintf(f.out, "  status=0x%04X hardware=0x%04X sync_required=%v reset=%v hardware_issue=%v\n",
+		fmt.Fprintf(f.out, "  status_code: 0x%04X\n  hardware_code: 0x%04X\n  sync_required: %v\n  reset: %v\n  hardware_issue: %v\n",
 			v.StatusCode, v.HardwareCode, v.SyncRequired, v.Reset, v.HardwareIssue)
 	case []timeflip.HistoryEntry:
-		fmt.Fprintf(f.out, "  history_entries=%d\n", len(v))
+		fmt.Fprintf(f.out, "  history_entries: %d\n", len(v))
+	case []byte:
+		fmt.Fprintf(f.out, "  payload_bytes: %d\n  payload_hex: %s\n", len(v), strings.ToUpper(hex.EncodeToString(v)))
 	default:
 		if event.Payload != nil {
-			fmt.Fprintf(f.out, "  payload=%+v\n", event.Payload)
+			fmt.Fprintf(f.out, "  payload: %+v\n", event.Payload)
 		}
 	}
 	if len(event.Raw) > 0 {
-		fmt.Fprintf(f.out, "  raw=%s\n", strings.ToUpper(hex.EncodeToString(event.Raw)))
+		fmt.Fprintf(f.out, "  raw_hex: %s\n", strings.ToUpper(hex.EncodeToString(event.Raw)))
 	}
 }
 
@@ -162,6 +174,15 @@ func (f *TextFormatter) PrintError(err error) {
 	defer f.mu.Unlock()
 	var opErr *timeflip.OperationError
 	if errors.As(err, &opErr) {
+		if opErr.Operation == "events" && errors.Is(err, timeflip.ErrProtocol) {
+			source := opErr.Stage
+			if source == "" {
+				source = "unknown"
+			}
+			fmt.Fprintf(f.err, "%s could not decode %s notification from device %s; streaming continues.\n", f.style("stream warning:", ansiYellow), source, opErr.DeviceID)
+			fmt.Fprintf(f.err, "  detail: %v\n", opErr.Err)
+			return
+		}
 		fmt.Fprintf(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
 		if opErr.Stage != "" {
 			fmt.Fprintf(f.err, " stage=%s", opErr.Stage)
@@ -182,6 +203,32 @@ func (f *TextFormatter) PrintError(err error) {
 		return
 	}
 	fmt.Fprintf(f.err, "%s %v\n", f.style("error:", ansiRed), err)
+}
+
+func eventTitle(kind timeflip.EventKind) string {
+	switch kind {
+	case timeflip.EventFacet:
+		return "orientation / facet changed"
+	case timeflip.EventDoubleTap:
+		return "double tap"
+	case timeflip.EventBattery:
+		return "battery update"
+	case timeflip.EventSystemState:
+		return "system state update"
+	case timeflip.EventHistory:
+		return "history update"
+	case timeflip.EventRaw:
+		return "raw TimeFlip notification"
+	default:
+		return string(kind)
+	}
+}
+
+func eventSourceLabel(event timeflip.Event) string {
+	if event.Source == "" {
+		return "unknown"
+	}
+	return timeflip.NotificationSourceName(event.Source)
 }
 
 func (f *TextFormatter) PrintSuggestions(commands []string) {

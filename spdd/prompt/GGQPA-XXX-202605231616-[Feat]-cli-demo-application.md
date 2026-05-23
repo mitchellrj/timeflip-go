@@ -431,6 +431,7 @@ Session "1" --> "0..N" Event : streams
    - If stream setup fails after partial subscription, display the library error and do not mark a stream active.
    - If the event channel closes naturally, clear stream state and print that streaming ended.
    - Formatting should handle facet, double tap, battery, system state, history, raw, and unknown payloads.
+   - Streaming output should use clear labels: event type, source characteristic, device, received time, and payload fields. Decode errors should explain which notification source could not be decoded and whether streaming will continue.
 
 ### Implement Input and Output Utilities - Prompting, Confirmation, Formatting
 
@@ -454,6 +455,7 @@ Session "1" --> "0..N" Event : streams
    - Manual actions print kind, description, and input key/value pairs.
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.
+   - Event-stream protocol errors should be worded as non-fatal decode warnings when possible, for example "stream warning: could not decode history notification; streaming continues".
    - Suggestions print as a compact "next:" block with one command per line and must not imply the suggested command has already succeeded.
    - Manual OS actions must be rendered as explicit numbered user steps. For OS pairing, tell the user to keep the device nearby, open macOS System Settings > Bluetooth, connect or pair the TimeFlip2 device if shown, approve any prompt, return to the demo, then run the suggested CLI commands. For OS unpairing, tell the user how to forget/remove the device in System Settings before retrying.
    - Unsupported OS-action stages that include a manual action should be described as "automatic OS action is not available" rather than a bare `unsupported operation` failure.
