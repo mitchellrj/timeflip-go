@@ -155,7 +155,7 @@ func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult) {
 func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintf(f.out, "%s %s\n", f.style("event:", ansiGreen), eventTitle(event.Kind))
+	fmt.Fprintf(f.out, "\n%s %s\n", f.style("event:", ansiGreen), eventTitle(event.Kind))
 	fmt.Fprintf(f.out, "  device: %s\n", event.DeviceID)
 	fmt.Fprintf(f.out, "  source: %s\n", eventSourceLabel(event))
 	fmt.Fprintf(f.out, "  received: %s\n", event.ReceivedAt.Format("2006-01-02T15:04:05Z07:00"))

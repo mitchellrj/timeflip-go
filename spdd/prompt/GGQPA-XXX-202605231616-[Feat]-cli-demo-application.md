@@ -455,12 +455,14 @@ Session "1" --> "0..N" Event : streams
    - Secret input should avoid echo where terminal support exists; if standard library-only implementation cannot disable echo portably, prompt plainly and document the limitation in the demo help.
    - Interactive command prompts should use raw terminal input with history only when stdin and stdout are TTYs that support it. Non-TTY input must fall back to buffered line reads.
    - Up and down arrows should navigate command history for the main `timeflip>` prompt. Secret prompts and confirmation prompts must not be added to command history.
+   - Raw terminal input mode must preserve terminal output newline processing so asynchronous stream output does not stair-step indentation across the screen.
    - Color output should be limited to terminal-friendly ANSI colors and must be disabled automatically for non-TTY output or explicitly with `-no-color`.
    - Manual actions print kind, description, and input key/value pairs.
    - Stage results print completed/error/manual-action information in execution order.
    - Errors use `errors.As` to detect `*timeflip.OperationError` and include operation, stage, device ID, command code, and wrapped error.
    - `send_command` protocol errors should be worded as unexpected command acknowledgements rather than bare protocol failures; include the expected status values and a practical next step such as checking authorization or retrying a simple valid name for name writes.
    - Event-stream protocol errors should be worded as non-fatal decode warnings when possible, for example "stream warning: could not decode history notification; streaming continues".
+   - Stream events printed while the interactive prompt is waiting should begin on a fresh line so event text does not appear after the `timeflip>` prompt.
    - Suggestions print as a compact "next:" block with one command per line and must not imply the suggested command has already succeeded.
    - Manual OS actions must be rendered as explicit numbered user steps. For OS pairing, tell the user to keep the device nearby, open macOS System Settings > Bluetooth, connect or pair the TimeFlip2 device if shown, approve any prompt, return to the demo, then run the suggested CLI commands. For OS unpairing, tell the user how to forget/remove the device in System Settings before retrying.
    - Unsupported OS-action stages that include a manual action should be described as "automatic OS action is not available" rather than a bare `unsupported operation` failure.

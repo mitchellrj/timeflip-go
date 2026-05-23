@@ -24,7 +24,6 @@ func makeRawTerminal(file *os.File) (func(), error) {
 	}
 	newState := *oldState
 	newState.Iflag &^= unix.BRKINT | unix.ICRNL | unix.INPCK | unix.ISTRIP | unix.IXON
-	newState.Oflag &^= unix.OPOST
 	newState.Cflag |= unix.CS8
 	newState.Lflag &^= unix.ECHO | unix.ICANON | unix.IEXTEN | unix.ISIG
 	newState.Cc[unix.VMIN] = 1
