@@ -377,6 +377,7 @@ Session "1" --> "0..N" Event : streams
    - `write task FACET MODE POMODORO_SECONDS`
    - `write tap THRESHOLD LIMIT LATENCY WINDOW`
    - Bare `write`, `help write`, and unknown write kinds must print detailed usage for every writable item, including accepted values/ranges and examples.
+   - Write-name help and quote parse errors must explain that apostrophes start/end single-quoted strings, so names containing apostrophes should be wrapped in double quotes, for example `write name "Mitch's TimeFlip"`.
 3. Method:
    - `func runWrite(ctx context.Context, app *DemoApp, args []string) error`
 4. Logic:

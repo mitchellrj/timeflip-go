@@ -38,6 +38,9 @@ func TestSplitArgs(t *testing.T) {
 	if _, err := splitArgs(`write name "Desk Timer`); err == nil {
 		t.Fatal("expected unterminated quote error")
 	}
+	if _, err := splitArgs(`write name Mitch's TimeFlip`); err == nil || !strings.Contains(err.Error(), `write name "Mitch's TimeFlip"`) {
+		t.Fatalf("expected helpful apostrophe quoting error, got %v", err)
+	}
 }
 
 func TestCommandDispatchAndPreconditions(t *testing.T) {
@@ -68,6 +71,7 @@ func TestWriteUsageExplainsAllWritableItems(t *testing.T) {
 		"write led BRIGHTNESS_PERCENT BLINK_SECONDS",
 		"write color FACET R G B",
 		"write tap THRESHOLD LIMIT LATENCY WINDOW",
+		`Example: write name "Mitch's TimeFlip"`,
 		"Example: write led 50 10",
 	} {
 		if !strings.Contains(output, want) {

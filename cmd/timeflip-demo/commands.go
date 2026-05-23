@@ -528,8 +528,10 @@ Writable configuration:
       Example: write password
 
   write name NAME
-      Set the device name. NAME must be 1-18 characters; quote names with spaces.
+      Set the device name. NAME must be 1-18 characters. Quote names with spaces.
+      Names containing apostrophes should be wrapped in double quotes.
       Example: write name "Desk Timer"
+      Example: write name "Mitch's TimeFlip"
 
   write lock on|off
       Enable or disable lock mode.

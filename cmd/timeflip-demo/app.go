@@ -216,10 +216,20 @@ func splitArgs(line string) ([]string, error) {
 		b.WriteRune('\\')
 	}
 	if quote != 0 {
-		return nil, fmt.Errorf("unterminated quote")
+		return nil, fmt.Errorf("unterminated %s quote: wrap values containing apostrophes in double quotes, for example: write name \"Mitch's TimeFlip\"", quoteName(quote))
 	}
 	if b.Len() > 0 {
 		args = append(args, b.String())
 	}
 	return args, nil
+}
+
+func quoteName(quote rune) string {
+	if quote == '\'' {
+		return "single"
+	}
+	if quote == '"' {
+		return "double"
+	}
+	return "quoted"
 }
