@@ -53,6 +53,9 @@ func runHelp(_ context.Context, app *DemoApp, args []string) error {
 		}
 		app.out.PrintLine(cmd.usage)
 		app.out.PrintLine("  " + cmd.description)
+		if name == "write" {
+			app.out.PrintLine(writeUsage())
+		}
 		return nil
 	}
 	names := []string{"help", "status", "list", "select", "pair", "connect", "authorize", "read", "write", "command", "stream", "stop", "unpair", "close", "exit"}
@@ -369,12 +372,13 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 }
 
 func runWrite(ctx context.Context, app *DemoApp, args []string) error {
+	if len(args) == 0 {
+		app.out.PrintLine(writeUsage())
+		return nil
+	}
 	session, err := app.requireSession()
 	if err != nil {
 		return err
-	}
-	if len(args) == 0 {
-		return fmt.Errorf("usage: write password|name|lock|pause|autopause|led|color|task|tap [args]")
 	}
 	var result timeflip.CommandResult
 	switch strings.ToLower(args[0]) {
@@ -506,6 +510,7 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		}
 		result, err = session.SetTapSettings(ctx, timeflip.TapSettings{Threshold: threshold, Limit: limit, Latency: latency, Window: window}, app.commandOptions())
 	default:
+		app.out.PrintLine(writeUsage())
 		return fmt.Errorf("unknown write kind: %s", args[0])
 	}
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
@@ -513,6 +518,47 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		app.out.PrintSuggestions([]string{"read system", "read info", "stream"})
 	}
 	return err
+}
+
+func writeUsage() string {
+	return strings.TrimSpace(`
+Writable configuration:
+  write password
+      Prompt for a new six-character device password and confirmation.
+      Example: write password
+
+  write name NAME
+      Set the device name. NAME must be 1-18 characters; quote names with spaces.
+      Example: write name "Desk Timer"
+
+  write lock on|off
+      Enable or disable lock mode.
+      Example: write lock on
+
+  write pause on|off
+      Enable or disable pause mode.
+      Example: write pause off
+
+  write autopause MINUTES
+      Set auto-pause delay in minutes. MINUTES must be an unsigned 16-bit integer.
+      Example: write autopause 15
+
+  write led BRIGHTNESS_PERCENT BLINK_SECONDS
+      Set LED brightness and blink period. BRIGHTNESS_PERCENT is 1-100; BLINK_SECONDS is 5-60.
+      Example: write led 50 10
+
+  write color FACET R G B
+      Set a facet colour. FACET is 0-255; R, G, and B are unsigned 16-bit values.
+      Example: write color 1 65535 0 0
+
+  write task FACET MODE POMODORO_SECONDS
+      Set task parameters for a facet. FACET and MODE are 0-255; POMODORO_SECONDS is unsigned 32-bit.
+      Example: write task 1 0 1500
+
+  write tap THRESHOLD LIMIT LATENCY WINDOW
+      Set double-tap calibration bytes. Each value is 0-255.
+      Example: write tap 20 10 5 30
+`)
 }
 
 func runCommand(ctx context.Context, app *DemoApp, args []string) error {

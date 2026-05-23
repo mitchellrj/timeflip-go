@@ -57,6 +57,36 @@ func TestCommandDispatchAndPreconditions(t *testing.T) {
 	}
 }
 
+func TestWriteUsageExplainsAllWritableItems(t *testing.T) {
+	app, _, out, errOut := newTestApp(t, &fakeDemoTransport{})
+	app.Execute(context.Background(), "write")
+	output := out.String()
+	for _, want := range []string{
+		"write password",
+		"write name NAME",
+		"write lock on|off",
+		"write led BRIGHTNESS_PERCENT BLINK_SECONDS",
+		"write color FACET R G B",
+		"write tap THRESHOLD LIMIT LATENCY WINDOW",
+		"Example: write led 50 10",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("write usage missing %q in %q", want, output)
+		}
+	}
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected error: %q", errOut.String())
+	}
+}
+
+func TestHelpWriteShowsDetailedWriteUsage(t *testing.T) {
+	app, _, out, _ := newTestApp(t, &fakeDemoTransport{})
+	app.Execute(context.Background(), "help write")
+	if !strings.Contains(out.String(), "Writable configuration:") || !strings.Contains(out.String(), "write task FACET MODE POMODORO_SECONDS") {
+		t.Fatalf("missing detailed write help: %q", out.String())
+	}
+}
+
 func TestListCanSelectSingleSupportedDevice(t *testing.T) {
 	transport := &fakeDemoTransport{peripherals: []timeflip.Peripheral{
 		{ID: "tf", Name: "TimeFlip2", RSSI: -42, AdvertisedServices: []timeflip.ServiceID{timeflip.TimeFlipService}},
