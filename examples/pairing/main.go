@@ -1,0 +1,36 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"time"
+
+	timeflip "timeflip-go"
+	"timeflip-go/macos"
+)
+
+func main() {
+	if len(os.Args) < 3 {
+		fmt.Fprintln(os.Stderr, "usage: pairing DEVICE_ID PASSWORD")
+		os.Exit(2)
+	}
+	client, err := timeflip.NewClient(macos.NewTransport(), timeflip.Config{CommunicationTimeout: 10 * time.Second})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	result, err := client.Pair(context.Background(), timeflip.PairRequest{
+		DeviceID:       timeflip.DeviceID(os.Args[1]),
+		Password:       os.Args[2],
+		AllowOSPairing: true,
+	})
+	fmt.Printf("completed=%v stage=%s\n", result.Completed, result.Stage)
+	if result.ManualAction != nil {
+		fmt.Printf("manual action: %s\n", result.ManualAction.Description)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}

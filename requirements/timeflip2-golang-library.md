@@ -30,7 +30,6 @@ So as not to be dependent on a mobile device or a cloud API which may eventually
 * Masking the protocol and communication medium from integrators.
 * Documenting how to use the library as an integrator.
 * Configuration of communication timeouts.
-* Any storage or caching of device state.
 
 ## Scope Out
 
@@ -38,6 +37,7 @@ So as not to be dependent on a mobile device or a cloud API which may eventually
 * Linux support. Reserved as a future task.
 * Business logic interpreting any events.
 * Updating device firmware. Reserved as a future task.
+* Any storage or caching of device state.
 
 ## Acceptance Criteria (ACs)
 
