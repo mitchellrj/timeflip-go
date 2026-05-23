@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 // FakeTransport is a deterministic transport for tests.

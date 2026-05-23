@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 func TestFormatterPrintsManualActionAndOperationError(t *testing.T) {

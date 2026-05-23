@@ -178,7 +178,7 @@ Transport "1" --> "0..N" Connection : creates
 
 1. Responsibility: Initialize a Go library module and establish package boundaries for public API, protocol logic, transport interfaces, MacOS adapter, examples, and tests.
 2. Files:
-   - `go.mod`: module definition using module path `timeflip-go` unless repository metadata provides a more specific path.
+   - `go.mod`: module definition using module path `github.com/mitchellrj/timeflip-go`.
    - `client.go`, `session.go`, `types.go`, `errors.go`, `options.go`: public API package files.
    - `internal/protocol/*.go`: TimeFlip2 protocol constants, command encoding, and decoding.
    - `internal/transport/*.go`: transport and connection interfaces plus fake implementations for tests.

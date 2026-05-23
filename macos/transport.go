@@ -4,7 +4,7 @@ package macos
 import (
 	"context"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 // Transport is a MacOS BLE transport placeholder.

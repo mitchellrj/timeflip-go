@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 type TextFormatter struct {

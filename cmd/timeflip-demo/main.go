@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	timeflip "timeflip-go"
-	"timeflip-go/macos"
+	timeflip "github.com/mitchellrj/timeflip-go"
+	"github.com/mitchellrj/timeflip-go/macos"
 )
 
 func main() {

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 type demoCommand struct {

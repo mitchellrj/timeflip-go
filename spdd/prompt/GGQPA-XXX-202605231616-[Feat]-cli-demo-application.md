@@ -152,7 +152,7 @@ Session "1" --> "0..N" Event : streams
 
 ### Dependencies
 
-1. `cmd/timeflip-demo` depends on the public root package `timeflip-go` and the `timeflip-go/macos` adapter package.
+1. `cmd/timeflip-demo` depends on the public root package `github.com/mitchellrj/timeflip-go` and the `github.com/mitchellrj/timeflip-go/macos` adapter package.
 2. Demo command handlers call `Client.ListDevices`, `Client.Pair`, `Client.Unpair`, `Client.Connect`, and active `Session` methods.
 3. Demo output formatting depends on public library result types such as `DiscoveredDevice`, `PairingResult`, `UnpairingResult`, `ManualAction`, `CommandResult`, and `Event`.
 4. Demo tests should use small fake `Transport` and `Connection` implementations local to `cmd/timeflip-demo` or test-only helper files, not root package unexported test fakes.

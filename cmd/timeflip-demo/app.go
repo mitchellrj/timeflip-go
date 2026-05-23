@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	timeflip "timeflip-go"
+	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 type DemoConfig struct {

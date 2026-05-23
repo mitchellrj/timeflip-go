@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"timeflip-go/internal/protocol"
+	"github.com/mitchellrj/timeflip-go/internal/protocol"
 )
 
 const (
