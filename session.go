@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -337,7 +339,11 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charEvents:
 		payload := append([]byte(nil), n.Payload...)
-		event.Kind, event.Payload = EventRaw, payload
+		if kind, decoded, ok := decodeTimeFlipTextEvent(payload); ok {
+			event.Kind, event.Payload = kind, decoded
+		} else {
+			event.Kind, event.Payload = EventRaw, payload
+		}
 		if len(event.Raw) == 0 {
 			event.Raw = payload
 		}
@@ -353,6 +359,46 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 		}
 		return Event{}, &OperationError{Operation: "events", DeviceID: s.deviceID, Stage: NotificationSourceName(n.Characteristic), Err: ErrProtocol}
 	}
+}
+
+func decodeTimeFlipTextEvent(payload []byte) (EventKind, any, bool) {
+	text := cleanString(payload)
+	side, tap, ok := parseSideEventText(text)
+	if !ok {
+		return "", nil, false
+	}
+	raw := append([]byte(nil), payload...)
+	if tap || side >= 128 {
+		pause := side >= 128
+		if pause {
+			side -= 128
+		}
+		return EventDoubleTap, DoubleTapEvent{Facet: FacetID(side), Pause: pause, Raw: raw}, true
+	}
+	return EventFacet, FacetEvent{Facet: FacetID(side), Undefined: side == 0, WrongPassword: side == 0, Raw: raw}, true
+}
+
+func parseSideEventText(text string) (side uint64, tap bool, ok bool) {
+	text = strings.TrimSpace(text)
+	normalized := strings.ToLower(text)
+	for _, candidate := range []struct {
+		prefix string
+		tap    bool
+	}{
+		{prefix: "new side:"},
+		{prefix: "side:"},
+		{prefix: "double tap:", tap: true},
+		{prefix: "doubletap:", tap: true},
+		{prefix: "tap:", tap: true},
+	} {
+		if !strings.HasPrefix(normalized, candidate.prefix) {
+			continue
+		}
+		value := strings.TrimSpace(text[len(candidate.prefix):])
+		side, err := strconv.ParseUint(value, 0, 8)
+		return side, candidate.tap, err == nil
+	}
+	return 0, false, false
 }
 
 func notificationDecodeErr(deviceID DeviceID, ch CharacteristicID, err error) error {

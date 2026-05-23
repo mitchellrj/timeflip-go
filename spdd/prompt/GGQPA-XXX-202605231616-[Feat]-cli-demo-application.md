@@ -436,6 +436,7 @@ Session "1" --> "0..N" Event : streams
    - If stream setup fails after partial subscription, display the library error and do not mark a stream active.
    - If the event channel closes naturally, clear stream state and print that streaming ended.
    - Formatting should handle facet, double tap, battery, system state, history, raw, and unknown payloads.
+   - TimeFlip ASCII event-log messages promoted by the library, including pause-encoded side values from the TimeFlip-events characteristic, must be displayed as normal typed facet or double-tap events rather than raw hex/text-only events.
    - Streaming output should use clear labels: event type, source characteristic, device, received time, and payload fields. Decode errors should explain which notification source could not be decoded and whether streaming will continue.
 
 ### Implement Input and Output Utilities - Prompting, Confirmation, Formatting

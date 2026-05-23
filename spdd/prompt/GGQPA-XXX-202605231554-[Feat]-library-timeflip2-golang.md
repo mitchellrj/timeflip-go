@@ -478,6 +478,7 @@ Transport "1" --> "0..N" Connection : creates
 3. Logic:
    - Subscribe to facet, double-tap, battery, system-state, TimeFlip events, and history notifications where supported.
    - Decode each notification into typed technical events.
+   - TimeFlip events characteristic notifications that contain known ASCII event-log text such as `New Side: 0x04` or pause-encoded side values such as `New Side: 0x84` must be promoted to typed facet or double-tap events using the same side encoding rules as facet/double-tap payloads.
    - TimeFlip events characteristic notifications that do not have a higher-level typed decoder must be emitted as raw technical events instead of surfacing as protocol errors.
    - Event decode errors must include the notification source/characteristic context so consumers can distinguish malformed facet, double-tap, battery, system-state, TimeFlip events, and history notifications.
    - Send unknown but well-formed notifications as raw events when `IncludeRaw` is true.

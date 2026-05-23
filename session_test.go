@@ -187,6 +187,49 @@ func TestEventsTimeFlipEventsCharacteristicEmitsRawEvent(t *testing.T) {
 	}
 }
 
+func TestEventsTimeFlipEventsCharacteristicPromotesSideText(t *testing.T) {
+	conn := &fakeConnection{}
+	session := newTestSession(t, conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, errs, err := session.Events(ctx, EventOptions{Buffer: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.subscriptions[charEvents] <- Notification{Characteristic: charEvents, Payload: []byte("New Side: 0x04")}
+	conn.subscriptions[charEvents] <- Notification{Characteristic: charEvents, Payload: []byte("New Side: 0x84")}
+
+	select {
+	case event := <-events:
+		facet, ok := event.Payload.(FacetEvent)
+		if event.Kind != EventFacet || event.Source != charEvents || !ok || facet.Facet != 4 {
+			t.Fatalf("unexpected promoted facet event: %+v", event)
+		}
+		if string(event.Raw) != "New Side: 0x04" || string(facet.Raw) != "New Side: 0x04" {
+			t.Fatalf("expected raw text to be preserved: event=%+v facet=%+v", event, facet)
+		}
+	case err := <-errs:
+		t.Fatalf("unexpected stream error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for facet event")
+	}
+
+	select {
+	case event := <-events:
+		tap, ok := event.Payload.(DoubleTapEvent)
+		if event.Kind != EventDoubleTap || event.Source != charEvents || !ok || tap.Facet != 4 || !tap.Pause {
+			t.Fatalf("unexpected promoted double-tap event: %+v", event)
+		}
+		if string(event.Raw) != "New Side: 0x84" || string(tap.Raw) != "New Side: 0x84" {
+			t.Fatalf("expected raw text to be preserved: event=%+v tap=%+v", event, tap)
+		}
+	case err := <-errs:
+		t.Fatalf("unexpected stream error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for double-tap event")
+	}
+}
+
 func TestNotificationDecodeErrorIncludesSource(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{})
 	_, err := session.decodeNotification(Notification{Characteristic: charHistory, Payload: []byte{0x01}}, false)
