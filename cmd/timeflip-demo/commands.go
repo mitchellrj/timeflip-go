@@ -25,7 +25,7 @@ func buildCommands() map[string]demoCommand {
 		{"pair", "pair [DEVICE_ID]", "Run guided pairing for a new or reset device.", runPair},
 		{"unpair", "unpair [DEVICE_ID]", "Run guided unpairing and optional reset.", runUnpair},
 		{"connect", "connect [DEVICE_ID]", "Open an active session.", runConnect},
-		{"authorize", "authorize", "Authorize the active session with a six-character password.", runAuthorize},
+		{"authorize", "authorize", "Authorize the active session; blank uses the default password.", runAuthorize},
 		{"read", "read info|battery|system|history|task|tap [args]", "Read data or configuration from the active session.", runRead},
 		{"write", "write password|name|lock|pause|autopause|led|color|task|tap [args]", "Write supported configuration.", runWrite},
 		{"command", "command reset-task-info|factory-reset", "Execute supported device commands.", runCommand},
@@ -64,7 +64,7 @@ func runHelp(_ context.Context, app *DemoApp, args []string) error {
 		cmd := app.commands[name]
 		app.out.Printf("  %-12s %s\n", cmd.name, cmd.description)
 	}
-	app.out.PrintLine("Password prompts use standard input; terminal echo is not disabled in this dependency-free demo.")
+	app.out.PrintLine("Password prompts use standard input; terminal echo is not disabled in this dependency-free demo. Blank uses the default TimeFlip2 password 000000.")
 	app.out.PrintLine("When running in a supported terminal, use up/down arrows for command history. Use -no-color to disable color output.")
 	return nil
 }
@@ -136,12 +136,13 @@ func runPair(ctx context.Context, app *DemoApp, args []string) error {
 	if err != nil {
 		return err
 	}
-	password, err := app.in.PromptSecret("Current password if previously set (leave blank if none): ")
+	password, err := app.in.PromptSecret("Current password (blank uses default 000000): ")
 	if err != nil {
 		return err
 	}
-	if password != "" && len(password) != 6 {
-		return fmt.Errorf("password must be six characters")
+	password, err = passwordInputOrDefault(password)
+	if err != nil {
+		return err
 	}
 	var newPassword string
 	if ok, err := app.in.Confirm("Set a new password?"); err != nil {
@@ -191,15 +192,16 @@ func runUnpair(ctx context.Context, app *DemoApp, args []string) error {
 		return err
 	}
 	var password string
-	if ok, err := app.in.Confirm("Provide password for device-side reset?"); err != nil {
+	if ok, err := app.in.Confirm("Use a non-default password for device-side reset?"); err != nil {
 		return err
 	} else if ok {
-		password, err = app.in.PromptSecret("Password (six characters): ")
+		password, err = app.in.PromptSecret("Password (blank uses default 000000): ")
 		if err != nil {
 			return err
 		}
-		if len(password) != 6 {
-			return fmt.Errorf("password must be six characters")
+		password, err = passwordInputOrDefault(password)
+		if err != nil {
+			return err
 		}
 	}
 	factoryReset := false
@@ -269,12 +271,13 @@ func runAuthorize(ctx context.Context, app *DemoApp, _ []string) error {
 	if err != nil {
 		return err
 	}
-	password, err := app.in.PromptSecret("Password (six characters): ")
+	password, err := app.in.PromptSecret("Password (blank uses default 000000): ")
 	if err != nil {
 		return err
 	}
-	if len(password) != 6 {
-		return fmt.Errorf("password must be six characters")
+	password, err = passwordInputOrDefault(password)
+	if err != nil {
+		return err
 	}
 	result, err := session.Authorize(ctx, password)
 	if err != nil {
@@ -286,6 +289,16 @@ func runAuthorize(ctx context.Context, app *DemoApp, _ []string) error {
 		app.out.PrintSuggestions(afterAuthorizeSuggestions())
 	}
 	return nil
+}
+
+func passwordInputOrDefault(password string) (string, error) {
+	if password == "" {
+		return timeflip.DefaultPassword, nil
+	}
+	if len(password) != 6 {
+		return "", fmt.Errorf("password must be six characters; leave blank to use default 000000")
+	}
+	return password, nil
 }
 
 func runClose(ctx context.Context, app *DemoApp, _ []string) error {

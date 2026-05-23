@@ -21,6 +21,9 @@ type CommandCode byte
 // FacetID identifies a TimeFlip2 facet.
 type FacetID uint8
 
+// DefaultPassword is the factory TimeFlip2 password, encoded as ASCII bytes.
+const DefaultPassword = "000000"
+
 // Config configures a Client.
 type Config struct {
 	CommunicationTimeout time.Duration
@@ -253,17 +256,21 @@ type RGB struct {
 // TaskParameters describes a facet task configuration.
 type TaskParameters struct {
 	Facet                FacetID
+	Assigned             bool
 	Mode                 uint8
 	PomodoroLimitSeconds uint32
 	ElapsedSeconds       uint32
+	Raw                  []byte
 }
 
 // TapSettings describes double-tap accelerometer register values.
 type TapSettings struct {
-	Threshold uint8
-	Limit     uint8
-	Latency   uint8
-	Window    uint8
+	Configured bool
+	Threshold  uint8
+	Limit      uint8
+	Latency    uint8
+	Window     uint8
+	Raw        []byte
 }
 
 // HistoryRequest requests history from a starting event number.

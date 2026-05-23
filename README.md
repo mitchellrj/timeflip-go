@@ -18,17 +18,17 @@ client, err := timeflip.NewClient(transport, timeflip.Config{
 })
 devices, err := client.ListDevices(ctx, timeflip.ScanFilter{})
 session, err := client.Connect(ctx, timeflip.ConnectRequest{DeviceID: devices[0].ID})
-_, err = session.Authorize(ctx, "000000")
+_, err = session.Authorize(ctx, "")
 events, errs, err := session.Events(ctx, timeflip.EventOptions{Buffer: 16})
 ```
 
 ## Pairing
 
-Pairing is a staged workflow for new or reset devices. The current password is optional and is needed only when the device already has one configured. Pairing can include TimeFlip password authorization, optional password changes, verification reads, and OS-level pairing where the active OS adapter directly supports it. If OS pairing is not directly supported, the result can include a `ManualAction` with the device ID and instructions for caller- or user-initiated action.
+Pairing is a staged workflow for new or reset devices. TimeFlip2 always requires password authorization before device commands; the factory default is ASCII `000000`, encoded as bytes `0x30 0x30 0x30 0x30 0x30 0x30`. Passing an empty password to `Authorize`, `Pair`, or device-side unpair/reset flows uses that default. Pairing can include TimeFlip password authorization, optional password changes, verification reads, and OS-level pairing where the active OS adapter directly supports it. If OS pairing is not directly supported, the result can include a `ManualAction` with the device ID and instructions for caller- or user-initiated action.
 
 ## Unpairing
 
-Unpairing is also staged. When the device is reachable and a password is supplied, callers can request device-side reset behavior such as factory reset. OS unpairing is attempted only where the adapter supports it; otherwise the library returns a manual action.
+Unpairing is also staged. When device-side reset behavior such as factory reset is requested, the client authorizes with the supplied password or the default password when the request password is empty. OS unpairing is attempted only where the adapter supports it; otherwise the library returns a manual action.
 
 ## Timeouts
 

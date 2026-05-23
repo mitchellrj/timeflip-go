@@ -30,6 +30,21 @@ func TestAuthorizeRejectsWrongPassword(t *testing.T) {
 	}
 }
 
+func TestAuthorizeBlankPasswordUsesDefault(t *testing.T) {
+	conn := &fakeConnection{}
+	session := newTestSession(t, conn)
+	result, err := session.Authorize(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Authorized {
+		t.Fatalf("expected authorization result, got %+v", result)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charPassword || string(conn.writes[0].payload) != DefaultPassword {
+		t.Fatalf("expected default password write, got %+v", conn.writes)
+	}
+}
+
 func TestReadBattery(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
 		charBattery: {88},
@@ -117,7 +132,7 @@ func TestReadTaskParametersUsesDataResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.Facet != 1 || task.Mode != 2 || task.PomodoroLimitSeconds != 1500 || task.ElapsedSeconds != 42 {
+	if !task.Assigned || task.Facet != 1 || task.Mode != 2 || task.PomodoroLimitSeconds != 1500 || task.ElapsedSeconds != 42 {
 		t.Fatalf("unexpected task parameters: %+v", task)
 	}
 	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdReadTask), 0x01}) {
@@ -128,7 +143,7 @@ func TestReadTaskParametersUsesDataResponse(t *testing.T) {
 func TestReadTaskParametersWaitsForMatchingCommandResponse(t *testing.T) {
 	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
 		charCommandResult: {
-			{0x19, 0x00},
+			{0x18, 0x00},
 			{byte(cmdReadTask), 0x01, 0x02, 0x00, 0x00, 0x05, 0xDC, 0x00, 0x00, 0x00, 0x2A},
 		},
 	}}
@@ -142,6 +157,20 @@ func TestReadTaskParametersWaitsForMatchingCommandResponse(t *testing.T) {
 	}
 }
 
+func TestReadTaskParametersTreats1900AsUnassigned(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {0x19, 0x00},
+	}}
+	session := newTestSession(t, conn)
+	task, err := session.ReadTaskParameters(context.Background(), 3, CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.Assigned || task.Facet != 3 || string(task.Raw) != string([]byte{0x19, 0x00}) {
+		t.Fatalf("expected unassigned task response, got %+v", task)
+	}
+}
+
 func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
 		charCommandResult: {byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
@@ -151,7 +180,7 @@ func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.Threshold != 20 || settings.Limit != 10 || settings.Latency != 5 || settings.Window != 30 {
+	if !settings.Configured || settings.Threshold != 20 || settings.Limit != 10 || settings.Latency != 5 || settings.Window != 30 {
 		t.Fatalf("unexpected tap settings: %+v", settings)
 	}
 	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdTapRead)}) {
@@ -162,7 +191,7 @@ func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 func TestReadTapSettingsWaitsForMatchingCommandResponse(t *testing.T) {
 	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
 		charCommandResult: {
-			{0x19, 0x00},
+			{0x18, 0x00},
 			{byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
 		},
 	}}
@@ -173,6 +202,20 @@ func TestReadTapSettingsWaitsForMatchingCommandResponse(t *testing.T) {
 	}
 	if settings.Threshold != 20 || settings.Window != 30 {
 		t.Fatalf("unexpected tap settings: %+v", settings)
+	}
+}
+
+func TestReadTapSettingsTreats1900AsUnassigned(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {0x19, 0x00},
+	}}
+	session := newTestSession(t, conn)
+	settings, err := session.ReadTapSettings(context.Background(), CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.Configured || string(settings.Raw) != string([]byte{0x19, 0x00}) {
+		t.Fatalf("expected unassigned tap settings response, got %+v", settings)
 	}
 }
 

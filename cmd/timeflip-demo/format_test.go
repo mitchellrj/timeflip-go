@@ -125,6 +125,32 @@ func TestFormatterExplainsSystemSyncReasonAndAction(t *testing.T) {
 	}
 }
 
+func TestFormatterPrintsUnassignedTaskAndTapSettings(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatter(out, &bytes.Buffer{})
+	formatter.PrintReadResult(timeflip.TaskParameters{
+		Facet:    3,
+		Assigned: false,
+		Raw:      []byte{0x19, 0x00},
+	})
+	formatter.PrintReadResult(timeflip.TapSettings{
+		Configured: false,
+		Raw:        []byte{0x19, 0x00},
+	})
+	output := out.String()
+	for _, want := range []string{
+		"facet: 3",
+		"assigned: false",
+		"configured: false",
+		"state: unassigned",
+		"raw_response: 0x1900",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("unassigned output missing %q in %q", want, output)
+		}
+	}
+}
+
 func TestFormatterPrintsMalformedCommandAcknowledgement(t *testing.T) {
 	out := &bytes.Buffer{}
 	formatter := NewTextFormatter(out, &bytes.Buffer{})
@@ -182,15 +208,14 @@ func TestFormatterExplainsMissingCommandBackedReadResponse(t *testing.T) {
 		Command:   timeflip.CommandCode(0x14),
 		Err: &timeflip.ProtocolPayloadError{
 			Expected: "command result beginning with requested command byte",
-			Payload:  []byte{0x19, 0x00},
+			Payload:  []byte{0x18, 0x00},
 		},
 	})
 	output := errOut.String()
 	for _, want := range []string{
 		"read warning:",
 		"no response for command 0x14",
-		"last_command_result: 0x1900",
-		"not documented as a task/tap response or as an unset value",
+		"last_command_result: 0x1800",
 		"firmware may not support this read command",
 	} {
 		if !strings.Contains(output, want) {

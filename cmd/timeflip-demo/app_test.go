@@ -185,6 +185,9 @@ func TestPairAllowsBlankCurrentPassword(t *testing.T) {
 	if errOut.Len() != 0 {
 		t.Fatalf("unexpected error: %q", errOut.String())
 	}
+	if len(conn.writes) == 0 || string(conn.writes[0].payload) != timeflip.DefaultPassword {
+		t.Fatalf("expected blank pairing password to use default, got %+v", conn.writes)
+	}
 }
 
 func TestSessionLifecycleAndStreamCancellation(t *testing.T) {
@@ -195,7 +198,7 @@ func TestSessionLifecycleAndStreamCancellation(t *testing.T) {
 	if app.state.ActiveSession == nil {
 		t.Fatal("expected active session")
 	}
-	input.answers = []string{"000000"}
+	input.answers = []string{""}
 	app.Execute(context.Background(), "authorize")
 	if !app.state.Authorized {
 		t.Fatal("expected authorized state")
@@ -342,8 +345,14 @@ func (f *fakeDemoTransport) UnpairOS(context.Context, timeflip.DeviceID) (timefl
 type fakeDemoConnection struct {
 	mu            sync.Mutex
 	subscriptions []chan timeflip.Notification
+	writes        []fakeDemoWrite
 	closed        bool
 	readPayload   []byte
+}
+
+type fakeDemoWrite struct {
+	characteristic timeflip.CharacteristicID
+	payload        []byte
 }
 
 func (f *fakeDemoConnection) Read(context.Context, timeflip.CharacteristicID) ([]byte, error) {
@@ -353,7 +362,10 @@ func (f *fakeDemoConnection) Read(context.Context, timeflip.CharacteristicID) ([
 	return []byte{0, 0, 0, 0}, nil
 }
 
-func (f *fakeDemoConnection) Write(context.Context, timeflip.CharacteristicID, []byte) error {
+func (f *fakeDemoConnection) Write(_ context.Context, ch timeflip.CharacteristicID, payload []byte) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.writes = append(f.writes, fakeDemoWrite{characteristic: ch, payload: append([]byte(nil), payload...)})
 	return nil
 }
 

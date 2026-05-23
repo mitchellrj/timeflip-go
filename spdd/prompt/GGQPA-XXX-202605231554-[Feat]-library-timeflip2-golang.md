@@ -366,11 +366,11 @@ Transport "1" --> "0..N" Connection : creates
    - `ManualAction *ManualAction`
 5. Logic:
    - Validate device ID and password inputs required for the requested flow.
-   - Treat `PairRequest.Password` as optional; require it only when the device already has a current password configured.
+   - Treat an empty `PairRequest.Password` as the factory default password `000000`, encoded as ASCII bytes `0x30`.
+   - Require any non-empty supplied password to be exactly six characters.
    - Connect to the device using the requested device ID.
    - If OS pairing is allowed, call `Transport.PairOS` and record performed, unsupported, or manual-action result.
-   - Authorize using the current password through the password characteristic only when `PairRequest.Password` is non-empty.
-   - If no current password is supplied, skip the authorize stage and continue with optional password setup and verification.
+   - Always authorize using the current or default password through the password characteristic before optional password setup and verification.
    - If requested, set a new six-character password using the supported command.
    - Verify usable state by reading a protected characteristic or command result.
    - Return completed result or partial staged result with recoverable error details.
@@ -391,7 +391,8 @@ Transport "1" --> "0..N" Connection : creates
    - `AllowOSUnpairing bool`
    - `Timeout time.Duration`
 4. Logic:
-   - If the device is reachable and password is supplied, connect and authorize.
+   - If device-side reset is requested, connect and authorize using the supplied password, or the default password `000000` when the request password is empty.
+   - Require any non-empty supplied password to be exactly six characters.
    - Perform requested device-specific reset using supported non-firmware commands, including factory reset command when explicitly requested by the caller.
    - If OS unpairing is allowed, call `Transport.UnpairOS`.
    - If OS unpairing is unsupported, return `ManualAction` with required device ID and adapter-provided instructions or inputs.
@@ -414,7 +415,7 @@ Transport "1" --> "0..N" Connection : creates
    - Validate device ID.
    - Apply communication timeout to connection.
    - Create a session with device ID, connection, default timeout, and protocol adapter.
-   - Write six-byte password to password characteristic during authorization.
+   - Write the supplied six-byte password to password characteristic during authorization; if the supplied password is empty, write the factory default password `000000`.
    - Read command result or protected characteristic to verify authorization when possible.
    - Close subscriptions and connection on `Close`.
 4. Constraints:
@@ -438,7 +439,8 @@ Transport "1" --> "0..N" Connection : creates
    - `ReadDeviceInfo` must format System ID as uppercase hex code text such as `0x517D517D`, not decoded ASCII, while preserving the raw bytes in diagnostics.
    - Use command plus command-result/history characteristic for command-backed reads.
    - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the command-result payload as data, not as the two-byte write acknowledgement format used by configuration writes.
-   - Command-backed reads and writes must ignore stale command-result payloads whose first byte does not match the requested command code, waiting until timeout for a matching command-result payload.
+   - Command-backed reads and writes must ignore stale command-result payloads whose first byte does not match the requested command code, waiting until timeout for a matching command-result payload, except for known special read responses.
+   - For task-parameter and tap-settings reads, command-result payload `0x1900` must be returned as an unassigned/unconfigured state based on observed Android app behavior, with raw bytes preserved.
    - History decoding must accept documented v4 single-history records of 17 bytes and full-history stream packets of 20 bytes.
    - Protocol errors from read payload decoding must include the expected payload shape, byte count, and raw bytes where available.
    - Apply global timeout or command override.

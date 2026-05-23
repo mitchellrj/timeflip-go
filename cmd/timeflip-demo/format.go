@@ -111,9 +111,21 @@ func (f *TextFormatter) PrintReadResult(value any) {
 				e.EventNumber, e.Facet, e.Pause, e.UndefinedFacet, e.AccelerometerError, e.MomentUnix, e.DurationSeconds, e.PreviousEventNumber)
 		}
 	case timeflip.TaskParameters:
-		fmt.Fprintf(f.out, "facet: %d\nmode: %d\npomodoro_seconds: %d\nelapsed_seconds: %d\n",
-			v.Facet, v.Mode, v.PomodoroLimitSeconds, v.ElapsedSeconds)
+		fmt.Fprintf(f.out, "facet: %d\nassigned: %v\n", v.Facet, v.Assigned)
+		if !v.Assigned {
+			fmt.Fprintln(f.out, "state: unassigned")
+			printRawResponse(f.out, v.Raw)
+			return
+		}
+		fmt.Fprintf(f.out, "mode: %d (%s)\npomodoro_seconds: %d\nelapsed_seconds: %d\n",
+			v.Mode, taskModeLabel(v.Mode), v.PomodoroLimitSeconds, v.ElapsedSeconds)
 	case timeflip.TapSettings:
+		fmt.Fprintf(f.out, "configured: %v\n", v.Configured)
+		if !v.Configured {
+			fmt.Fprintln(f.out, "state: unassigned")
+			printRawResponse(f.out, v.Raw)
+			return
+		}
 		fmt.Fprintf(f.out, "threshold: %d\nlimit: %d\nlatency: %d\nwindow: %d\n", v.Threshold, v.Limit, v.Latency, v.Window)
 	default:
 		fmt.Fprintf(f.out, "%+v\n", value)
@@ -236,9 +248,6 @@ func (f *TextFormatter) PrintError(err error) {
 					fmt.Fprintf(f.err, "  last_command_result: 0x%s\n", strings.ToUpper(hex.EncodeToString(payloadErr.Payload)))
 				}
 				fmt.Fprintln(f.err, "  meaning: the command-result characteristic did not change to the response for the command just sent before the timeout")
-				if len(payloadErr.Payload) == 2 && payloadErr.Payload[0] == 0x19 && payloadErr.Payload[1] == 0x00 {
-					fmt.Fprintln(f.err, "  note: 0x1900 is not documented as a task/tap response or as an unset value; it looks like an idle, default, or stale command-result value")
-				}
 				fmt.Fprintln(f.err, "  next: try authorize, read system, then retry; if this persists, this firmware may not support this read command")
 				return
 			}
@@ -337,6 +346,24 @@ func systemSyncActions(reason string) []string {
 	default:
 		return nil
 	}
+}
+
+func taskModeLabel(mode uint8) string {
+	switch mode {
+	case 0:
+		return "normal"
+	case 1:
+		return "pomodoro"
+	default:
+		return "unknown"
+	}
+}
+
+func printRawResponse(out io.Writer, payload []byte) {
+	if len(payload) == 0 {
+		return
+	}
+	fmt.Fprintf(out, "raw_response: 0x%s\n", strings.ToUpper(hex.EncodeToString(payload)))
 }
 
 func commandStatusRecognized(payload []byte) bool {

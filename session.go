@@ -21,7 +21,8 @@ type Session struct {
 
 // Authorize writes a six-byte password to the device password characteristic.
 func (s *Session) Authorize(ctx context.Context, password string) (AuthorizationResult, error) {
-	if len(password) != 6 {
+	password, err := passwordOrDefault(password)
+	if err != nil {
 		return AuthorizationResult{}, &OperationError{Operation: "authorize", DeviceID: s.deviceID, Err: ErrInvalidInput}
 	}
 	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
@@ -34,6 +35,16 @@ func (s *Session) Authorize(ctx context.Context, password string) (Authorization
 		return AuthorizationResult{}, &OperationError{Operation: "authorize", DeviceID: s.deviceID, Err: ErrAuthorizationFailed}
 	}
 	return AuthorizationResult{Authorized: true}, nil
+}
+
+func passwordOrDefault(password string) (string, error) {
+	if password == "" {
+		return DefaultPassword, nil
+	}
+	if len(password) != 6 {
+		return "", ErrInvalidInput
+	}
+	return password, nil
 }
 
 // Close closes the session connection.
@@ -131,26 +142,34 @@ func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]Histor
 
 // ReadTaskParameters reads task parameters for a facet.
 func (s *Session) ReadTaskParameters(ctx context.Context, facet FacetID, opts CommandOptions) (TaskParameters, error) {
-	payload, err := s.readCommandPayload(ctx, Command{Code: cmdReadTask, Payload: []byte{byte(facet)}}, opts, "read_task_parameters")
+	payload, err := s.readCommandPayload(ctx, Command{Code: cmdReadTask, Payload: []byte{byte(facet)}}, opts, "read_task_parameters", isUnassignedCommandResult)
 	if err != nil {
 		return TaskParameters{}, err
+	}
+	if isUnassignedCommandResult(payload) {
+		return TaskParameters{Facet: facet, Assigned: false, Raw: append([]byte(nil), payload...)}, nil
 	}
 	if len(payload) < 11 || CommandCode(payload[0]) != cmdReadTask {
 		return TaskParameters{}, &OperationError{Operation: "read_task_parameters", DeviceID: s.deviceID, Command: cmdReadTask, Err: newProtocolPayloadError("task response 0x14 plus 10 data bytes", payload)}
 	}
 	return TaskParameters{
 		Facet:                FacetID(payload[1]),
+		Assigned:             true,
 		Mode:                 payload[2],
 		PomodoroLimitSeconds: binary.BigEndian.Uint32(payload[3:7]),
 		ElapsedSeconds:       binary.BigEndian.Uint32(payload[7:11]),
+		Raw:                  append([]byte(nil), payload...),
 	}, nil
 }
 
 // ReadTapSettings reads double-tap accelerometer settings.
 func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (TapSettings, error) {
-	payload, err := s.readCommandPayload(ctx, commandNoPayload(cmdTapRead), opts, "read_tap_settings")
+	payload, err := s.readCommandPayload(ctx, commandNoPayload(cmdTapRead), opts, "read_tap_settings", isUnassignedCommandResult)
 	if err != nil {
 		return TapSettings{}, err
+	}
+	if isUnassignedCommandResult(payload) {
+		return TapSettings{Configured: false, Raw: append([]byte(nil), payload...)}, nil
 	}
 	settings, err := tapSettingsFromPayload(payload)
 	if err != nil {
@@ -159,7 +178,7 @@ func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (Tap
 	return settings, nil
 }
 
-func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts CommandOptions, operation string) ([]byte, error) {
+func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts CommandOptions, operation string, accept func([]byte) bool) ([]byte, error) {
 	encoded, err := encodeCommand(cmd)
 	if err != nil {
 		return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: cmd.Code, Err: ErrInvalidInput}
@@ -169,7 +188,7 @@ func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts Comm
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.readCommandResultFor(ctx, cmd.Code, operation)
+	payload, err := s.readCommandResultFor(ctx, cmd.Code, operation, accept)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +206,7 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return CommandResult{}, wrapContextErr("send_command", s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.readCommandResultFor(ctx, cmd.Code, "send_command")
+	payload, err := s.readCommandResultFor(ctx, cmd.Code, "send_command", nil)
 	if err != nil {
 		return CommandResult{}, err
 	}
@@ -202,7 +221,7 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 	return result, nil
 }
 
-func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, operation string) ([]byte, error) {
+func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, operation string, accept func([]byte) bool) ([]byte, error) {
 	var last []byte
 	for {
 		payload, err := s.conn.Read(ctx, charCommandResult)
@@ -213,6 +232,9 @@ func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, op
 		if len(payload) > 0 && CommandCode(payload[0]) == code {
 			return append([]byte(nil), payload...), nil
 		}
+		if accept != nil && accept(payload) {
+			return append([]byte(nil), payload...), nil
+		}
 		timer := time.NewTimer(50 * time.Millisecond)
 		select {
 		case <-ctx.Done():
@@ -221,6 +243,10 @@ func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, op
 		case <-timer.C:
 		}
 	}
+}
+
+func isUnassignedCommandResult(payload []byte) bool {
+	return len(payload) == 2 && payload[0] == 0x19 && payload[1] == 0x00
 }
 
 // SetPassword sets a new six-byte password.
@@ -474,5 +500,5 @@ func tapSettingsFromPayload(payload []byte) (TapSettings, error) {
 	if len(payload) < 9 || CommandCode(payload[0]) != cmdTapRead {
 		return TapSettings{}, newProtocolPayloadError("tap settings response 0x17 plus register/value pairs", payload)
 	}
-	return TapSettings{Threshold: payload[2], Limit: payload[4], Latency: payload[6], Window: payload[8]}, nil
+	return TapSettings{Configured: true, Threshold: payload[2], Limit: payload[4], Latency: payload[6], Window: payload[8], Raw: append([]byte(nil), payload...)}, nil
 }

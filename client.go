@@ -76,7 +76,8 @@ func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, erro
 		result.Stages = append(result.Stages, stage(string(PairingStageConnect), false, err, nil))
 		return result, err
 	}
-	if req.Password != "" && len(req.Password) != 6 {
+	password, err := passwordOrDefault(req.Password)
+	if err != nil {
 		err := &OperationError{Operation: "pair", DeviceID: req.DeviceID, Stage: string(PairingStageAuthorize), Err: ErrInvalidInput}
 		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
 		return result, err
@@ -101,14 +102,12 @@ func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, erro
 		}
 	}
 
-	if req.Password != "" {
-		result.Stage = PairingStageAuthorize
-		if _, err := session.Authorize(ctx, req.Password); err != nil {
-			result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
-			return result, err
-		}
-		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), true, nil, nil))
+	result.Stage = PairingStageAuthorize
+	if _, err := session.Authorize(ctx, password); err != nil {
+		result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), false, err, nil))
+		return result, err
 	}
+	result.Stages = append(result.Stages, stage(string(PairingStageAuthorize), true, nil, nil))
 
 	if req.NewPassword != "" {
 		result.Stage = PairingStagePassword
@@ -138,13 +137,20 @@ func (c *Client) Unpair(ctx context.Context, req UnpairRequest) (UnpairingResult
 		result.Stages = append(result.Stages, stage(string(UnpairingStageConnect), false, err, nil))
 		return result, err
 	}
-	if req.Password != "" {
+	needsDeviceAccess := req.Password != "" || req.FactoryReset
+	password, err := passwordOrDefault(req.Password)
+	if needsDeviceAccess && err != nil {
+		err := &OperationError{Operation: "unpair", DeviceID: req.DeviceID, Stage: string(UnpairingStageAuthorize), Err: ErrInvalidInput}
+		result.Stages = append(result.Stages, stage(string(UnpairingStageAuthorize), false, err, nil))
+		return result, err
+	}
+	if needsDeviceAccess {
 		session, err := c.Connect(ctx, ConnectRequest{DeviceID: req.DeviceID, Timeout: req.Timeout})
 		if err == nil {
 			defer session.Close(context.Background())
 			result.Stages = append(result.Stages, stage(string(UnpairingStageConnect), true, nil, nil))
 			result.Stage = UnpairingStageAuthorize
-			if _, err := session.Authorize(ctx, req.Password); err != nil {
+			if _, err := session.Authorize(ctx, password); err != nil {
 				result.Stages = append(result.Stages, stage(string(UnpairingStageAuthorize), false, err, nil))
 				return result, err
 			}

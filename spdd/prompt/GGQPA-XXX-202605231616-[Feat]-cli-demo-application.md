@@ -285,7 +285,8 @@ Session "1" --> "0..N" Event : streams
    - `func runPair(ctx context.Context, app *DemoApp, args []string) error`
 3. Logic:
    - Resolve device ID from args or selected state; if missing, prompt for it.
-   - Prompt for current six-character password using secret input when terminal support permits.
+   - Prompt for current password using secret input when terminal support permits; blank input uses the factory default `000000`.
+   - Require any non-empty current password input to be exactly six characters.
    - Ask whether to set a new password; if yes, prompt for and confirm the new six-character password.
    - Ask whether to allow OS pairing.
    - Call `client.Pair(ctx, timeflip.PairRequest{DeviceID, Password, NewPassword, AllowOSPairing, Timeout: cfg.CommandTimeout})`.
@@ -305,8 +306,9 @@ Session "1" --> "0..N" Event : streams
    - `func runUnpair(ctx context.Context, app *DemoApp, args []string) error`
 3. Logic:
    - Resolve device ID from args or selected state; prompt if missing.
-   - Ask whether the device is reachable and whether the user wants to provide a password for device-side reset.
-   - If password is provided, prompt secretly.
+   - Ask whether the user needs to provide a non-default password for device-side reset.
+   - If password is provided, prompt secretly; blank input uses the factory default `000000`.
+   - Require any non-empty password input to be exactly six characters.
    - Ask whether to factory reset the device; require explicit typed confirmation such as the device ID before enabling `FactoryReset`.
    - Ask whether to allow OS unpairing.
    - Call `client.Unpair(ctx, timeflip.UnpairRequest{DeviceID, Password, FactoryReset, AllowOSUnpairing, Timeout: cfg.CommandTimeout})`.
@@ -326,7 +328,7 @@ Session "1" --> "0..N" Event : streams
    - `func runClose(ctx context.Context, app *DemoApp, args []string) error`
 3. Logic:
    - `connect` resolves a device ID, closes any existing active session after confirmation when needed, then calls `client.Connect`.
-   - `authorize` requires an active session, prompts for six-character password, calls `session.Authorize`, and marks state authorized on success.
+   - `authorize` requires an active session, prompts for password, uses the factory default `000000` when the input is blank, calls `session.Authorize`, and marks state authorized on success.
    - `close` stops active stream, closes the active session, clears authorization state, and prints closure status.
    - After connect, suggest `authorize`.
    - After authorize, suggest reading configuration and optionally starting `stream`.
@@ -361,8 +363,8 @@ Session "1" --> "0..N" Event : streams
    - Display `read system` sync reasons and practical trigger commands where the protocol maps a status code to a writable setting, for example `write task FACET MODE POMODORO_SECONDS` for task-parameter sync and `write autopause MINUTES` for auto-pause sync.
    - Display Device Information `system_id` as hex-code text such as `0x517D517D`, not decoded ASCII.
    - Command-backed read protocol errors should show the operation, command code when available, expected payload shape, byte count, and raw payload bytes rather than describing them as write-command acknowledgement failures.
-   - Stale command-result payloads from earlier operations, for example `0x1900`, must not be shown as the result for a new command-backed read if their first byte does not match the command just sent.
-   - If a command-backed read times out while the command-result characteristic remains `0x1900`, explain that `0x1900` is not documented as a task/tap response or unset value and appears to be an idle/default/stale command-result value.
+   - For `read task` and `read tap`, display command-result payload `0x1900` as an unassigned/unconfigured state based on observed Android app behavior, preserving the raw response.
+   - Stale command-result payloads from earlier operations must not be shown as the result for a new command-backed read if their first byte does not match the command just sent and they are not a known special response such as `0x1900`.
    - `read history` with no start event must request the latest history event using `0xFFFFFFFF`; users can pass an explicit decimal or `0x`-prefixed start event, or `last`/`latest`.
 5. Edge Cases:
    - Validate facet values before calling library methods.
@@ -405,7 +407,7 @@ Session "1" --> "0..N" Event : streams
    - Failed command/write operations that return a command-result payload must still print the raw acknowledgement, but must not print success-path `next:` suggestions.
    - Malformed command acknowledgements must be labeled as unexpected, include the raw payload hex, and explain that status `0x02` means OK while `0x01` means rejected.
 5. Constraints:
-   - Password writes require confirmation and secret input.
+   - Password changes require confirmation and secret input; authorization prompts may use blank input for the default `000000`.
    - Value ranges must align with existing library validation where known; invalid input should be caught before the library call when practical.
    - Do not classify operations by sensitivity beyond demo-level confirmation prompts for user safety.
 

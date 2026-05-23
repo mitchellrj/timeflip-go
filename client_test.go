@@ -72,7 +72,7 @@ func TestPairManualOSActionAndPasswordChange(t *testing.T) {
 	}
 }
 
-func TestPairWithoutCurrentPasswordSkipsAuthorize(t *testing.T) {
+func TestPairBlankPasswordUsesDefaultAuthorization(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
 		charSystemState: {0x00, 0x00, 0x00, 0x00},
 	}}
@@ -89,15 +89,45 @@ func TestPairWithoutCurrentPasswordSkipsAuthorize(t *testing.T) {
 	if !result.Completed {
 		t.Fatalf("expected completed pairing, got %+v", result)
 	}
+	var authorized bool
 	for _, write := range conn.writes {
-		if write.characteristic == charPassword {
-			t.Fatalf("unexpected authorization write for blank current password: %+v", conn.writes)
+		if write.characteristic == charPassword && string(write.payload) == DefaultPassword {
+			authorized = true
 		}
 	}
+	if !authorized {
+		t.Fatalf("expected default authorization write, got %+v", conn.writes)
+	}
+	var authorizeStage bool
 	for _, stage := range result.Stages {
 		if stage.Stage == string(PairingStageAuthorize) {
-			t.Fatalf("unexpected authorize stage for blank current password: %+v", result.Stages)
+			authorizeStage = true
 		}
+	}
+	if !authorizeStage {
+		t.Fatalf("expected authorize stage for blank current password: %+v", result.Stages)
+	}
+}
+
+func TestUnpairFactoryResetBlankPasswordUsesDefaultAuthorization(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommandResult: {byte(cmdFactoryReset), 0x02},
+	}}
+	client, err := NewClient(&fakeTransport{
+		connections: map[DeviceID]*fakeConnection{"tf": conn},
+	}, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.Unpair(context.Background(), UnpairRequest{DeviceID: "tf", FactoryReset: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Completed || !result.DeviceResetComplete {
+		t.Fatalf("expected completed device reset, got %+v", result)
+	}
+	if len(conn.writes) < 2 || conn.writes[0].characteristic != charPassword || string(conn.writes[0].payload) != DefaultPassword {
+		t.Fatalf("expected default authorization before reset, got %+v", conn.writes)
 	}
 }
 
