@@ -204,12 +204,15 @@ type BatteryStatus struct {
 
 // SystemState describes TimeFlip2 sync and hardware state.
 type SystemState struct {
-	StatusCode    uint16
-	HardwareCode  uint16
-	SyncRequired  bool
-	Reset         bool
-	HardwareIssue bool
-	Raw           []byte
+	StatusCode          uint16
+	StatusDescription   string
+	HardwareCode        uint16
+	HardwareDescription string
+	SyncRequired        bool
+	SyncReason          string
+	Reset               bool
+	HardwareIssue       bool
+	Raw                 []byte
 }
 
 // TrackerStatus describes lock, pause, and auto-pause state.

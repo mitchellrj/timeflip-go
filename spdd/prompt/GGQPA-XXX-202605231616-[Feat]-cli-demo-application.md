@@ -358,9 +358,11 @@ Session "1" --> "0..N" Event : streams
      - `ReadTapSettings`
    - Use `timeflip.CommandOptions{Timeout: cfg.CommandTimeout}` for command-backed reads.
    - Print labeled fields and raw bytes only where the type already exposes useful diagnostics and the display remains readable.
+   - Display `read system` sync reasons and practical trigger commands where the protocol maps a status code to a writable setting, for example `write task FACET MODE POMODORO_SECONDS` for task-parameter sync and `write autopause MINUTES` for auto-pause sync.
    - Display Device Information `system_id` as hex-code text such as `0x517D517D`, not decoded ASCII.
    - Command-backed read protocol errors should show the operation, command code when available, expected payload shape, byte count, and raw payload bytes rather than describing them as write-command acknowledgement failures.
    - Stale command-result payloads from earlier operations, for example `0x1900`, must not be shown as the result for a new command-backed read if their first byte does not match the command just sent.
+   - If a command-backed read times out while the command-result characteristic remains `0x1900`, explain that `0x1900` is not documented as a task/tap response or unset value and appears to be an idle/default/stale command-result value.
    - `read history` with no start event must request the latest history event using `0xFFFFFFFF`; users can pass an explicit decimal or `0x`-prefixed start event, or `last`/`latest`.
 5. Edge Cases:
    - Validate facet values before calling library methods.
@@ -382,6 +384,7 @@ Session "1" --> "0..N" Event : streams
    - `write tap THRESHOLD LIMIT LATENCY WINDOW`
    - Bare `write`, `help write`, and unknown write kinds must print detailed usage for every writable item, including accepted values/ranges and examples.
    - Write-name help and quote parse errors must explain that apostrophes start/end single-quoted strings, so names containing apostrophes should be wrapped in double quotes, for example `write name "Mitch's TimeFlip"`.
+   - Write-task help and task-parameter sync hints must explain task modes: `0` means normal/simple mode, and `1` means pomodoro mode.
 3. Method:
    - `func runWrite(ctx context.Context, app *DemoApp, args []string) error`
 4. Logic:

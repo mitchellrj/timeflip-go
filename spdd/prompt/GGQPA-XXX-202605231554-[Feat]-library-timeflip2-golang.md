@@ -322,7 +322,7 @@ Transport "1" --> "0..N" Connection : creates
    - Battery level must be parsed as 1-100 percentage when present.
    - Facet payload must distinguish undefined facet, normal facet, and wrong-password zero where context makes that knowable.
    - Double-tap payload below 128 means pause off with the facet value; payload 128 or above means pause on and facet value is payload minus 128.
-   - System state must expose sync requirements and hardware issue values without deciding application behavior.
+   - System state must expose sync requirements and hardware issue values without deciding application behavior, including documented status labels for time, facet color, LED brightness, blink interval, task parameters, and auto-pause synchronization.
    - History parsing must handle single-entry reads, full stream packets, zero terminators, pause-encoded sides, undefined side value, accelerometer error side value, timestamps, durations, and previous-event references.
 4. Constraints:
    - Preserve raw payload on decoded values where useful for diagnostics.

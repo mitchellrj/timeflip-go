@@ -71,7 +71,9 @@ func TestWriteUsageExplainsAllWritableItems(t *testing.T) {
 		"write led BRIGHTNESS_PERCENT BLINK_SECONDS",
 		"write color FACET R G B",
 		"write tap THRESHOLD LIMIT LATENCY WINDOW",
+		"MODE is 0 normal or 1 pomodoro",
 		`Example: write name "Mitch's TimeFlip"`,
+		"Example: write task 1 1 1500",
 		"Example: write led 50 10",
 	} {
 		if !strings.Contains(output, want) {

@@ -60,7 +60,7 @@ func TestDecodeNotifications(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.SyncRequired || !state.HardwareIssue {
+	if !state.SyncRequired || state.SyncReason != "time" || state.StatusDescription != "time synchronization required" || !state.HardwareIssue || state.HardwareDescription != "unknown hardware status" {
 		t.Fatalf("unexpected system state: %+v", state)
 	}
 }

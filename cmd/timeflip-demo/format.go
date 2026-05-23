@@ -100,8 +100,7 @@ func (f *TextFormatter) PrintReadResult(value any) {
 	case timeflip.BatteryStatus:
 		fmt.Fprintf(f.out, "%s %d%%\n", f.style("battery:", ansiCyan), v.Percentage)
 	case timeflip.SystemState:
-		fmt.Fprintf(f.out, "status_code: 0x%04X\nhardware_code: 0x%04X\nsync_required: %v\nreset: %v\nhardware_issue: %v\n",
-			v.StatusCode, v.HardwareCode, v.SyncRequired, v.Reset, v.HardwareIssue)
+		printSystemState(f.out, v, "")
 	case []timeflip.HistoryEntry:
 		if len(v) == 0 {
 			fmt.Fprintln(f.out, "history: no entries")
@@ -174,8 +173,7 @@ func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 	case timeflip.BatteryStatus:
 		fmt.Fprintf(f.out, "  battery: %d%%\n", v.Percentage)
 	case timeflip.SystemState:
-		fmt.Fprintf(f.out, "  status_code: 0x%04X\n  hardware_code: 0x%04X\n  sync_required: %v\n  reset: %v\n  hardware_issue: %v\n",
-			v.StatusCode, v.HardwareCode, v.SyncRequired, v.Reset, v.HardwareIssue)
+		printSystemState(f.out, v, "  ")
 	case []timeflip.HistoryEntry:
 		fmt.Fprintf(f.out, "  history_entries: %d\n", len(v))
 	case []byte:
@@ -226,6 +224,25 @@ func (f *TextFormatter) PrintError(err error) {
 			}
 			return
 		}
+		if isCommandBackedRead(opErr.Operation) && errors.Is(err, timeflip.ErrProtocol) {
+			var payloadErr *timeflip.ProtocolPayloadError
+			if errors.As(err, &payloadErr) && strings.Contains(payloadErr.Expected, "command result beginning") {
+				fmt.Fprintf(f.err, "%s no response for command 0x%02X", f.style("read warning:", ansiYellow), byte(opErr.Command))
+				if opErr.DeviceID != "" {
+					fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+				}
+				fmt.Fprintln(f.err, ".")
+				if len(payloadErr.Payload) > 0 {
+					fmt.Fprintf(f.err, "  last_command_result: 0x%s\n", strings.ToUpper(hex.EncodeToString(payloadErr.Payload)))
+				}
+				fmt.Fprintln(f.err, "  meaning: the command-result characteristic did not change to the response for the command just sent before the timeout")
+				if len(payloadErr.Payload) == 2 && payloadErr.Payload[0] == 0x19 && payloadErr.Payload[1] == 0x00 {
+					fmt.Fprintln(f.err, "  note: 0x1900 is not documented as a task/tap response or as an unset value; it looks like an idle, default, or stale command-result value")
+				}
+				fmt.Fprintln(f.err, "  next: try authorize, read system, then retry; if this persists, this firmware may not support this read command")
+				return
+			}
+		}
 		fmt.Fprintf(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
 		if opErr.Stage != "" {
 			fmt.Fprintf(f.err, " stage=%s", opErr.Stage)
@@ -246,6 +263,80 @@ func (f *TextFormatter) PrintError(err error) {
 		return
 	}
 	fmt.Fprintf(f.err, "%s %v\n", f.style("error:", ansiRed), err)
+}
+
+func isCommandBackedRead(operation string) bool {
+	switch operation {
+	case "read_task_parameters", "read_tap_settings":
+		return true
+	default:
+		return false
+	}
+}
+
+func printSystemState(out io.Writer, state timeflip.SystemState, prefix string) {
+	fmt.Fprintf(out, "%sstatus_code: 0x%04X\n", prefix, state.StatusCode)
+	if state.StatusDescription != "" {
+		fmt.Fprintf(out, "%sstatus: %s\n", prefix, state.StatusDescription)
+	}
+	fmt.Fprintf(out, "%shardware_code: 0x%04X\n", prefix, state.HardwareCode)
+	if state.HardwareDescription != "" {
+		fmt.Fprintf(out, "%shardware: %s\n", prefix, state.HardwareDescription)
+	}
+	fmt.Fprintf(out, "%ssync_required: %v\n", prefix, state.SyncRequired)
+	if state.SyncRequired {
+		fmt.Fprintf(out, "%ssync_reason: %s\n", prefix, systemSyncReasonLabel(state.SyncReason))
+		actions := systemSyncActions(state.SyncReason)
+		if len(actions) > 0 {
+			fmt.Fprintf(out, "%ssync_actions:\n", prefix)
+			for _, action := range actions {
+				fmt.Fprintf(out, "%s  %s\n", prefix, action)
+			}
+		}
+	}
+	fmt.Fprintf(out, "%sreset: %v\n%shardware_issue: %v\n", prefix, state.Reset, prefix, state.HardwareIssue)
+}
+
+func systemSyncReasonLabel(reason string) string {
+	switch reason {
+	case "time":
+		return "time synchronization"
+	case "facet_color":
+		return "facet color synchronization"
+	case "led_brightness":
+		return "LED brightness synchronization"
+	case "blink_interval":
+		return "blink interval synchronization"
+	case "task_parameters":
+		return "task parameter synchronization"
+	case "auto_pause":
+		return "auto-pause synchronization"
+	case "unknown":
+		return "unknown synchronization"
+	default:
+		return reason
+	}
+}
+
+func systemSyncActions(reason string) []string {
+	switch reason {
+	case "time":
+		return []string{"time sync is not exposed by this demo yet", "try reconnecting or use the official app to set device time"}
+	case "facet_color":
+		return []string{"write color FACET R G B"}
+	case "led_brightness":
+		return []string{"write led BRIGHTNESS_PERCENT BLINK_SECONDS"}
+	case "blink_interval":
+		return []string{"write led BRIGHTNESS_PERCENT BLINK_SECONDS"}
+	case "task_parameters":
+		return []string{"write task FACET MODE POMODORO_SECONDS", "MODE: 0 normal, 1 pomodoro"}
+	case "auto_pause":
+		return []string{"write autopause MINUTES"}
+	case "unknown":
+		return []string{"read system again after any pending configuration write", "check whether this firmware reports an undocumented sync code"}
+	default:
+		return nil
+	}
 }
 
 func commandStatusRecognized(payload []byte) bool {

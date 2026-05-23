@@ -99,6 +99,32 @@ func TestFormatterPrintsStreamDecodeWarning(t *testing.T) {
 	}
 }
 
+func TestFormatterExplainsSystemSyncReasonAndAction(t *testing.T) {
+	out := &bytes.Buffer{}
+	formatter := NewTextFormatter(out, &bytes.Buffer{})
+	formatter.PrintReadResult(timeflip.SystemState{
+		StatusCode:          0x0205,
+		StatusDescription:   "task parameters synchronization required",
+		HardwareCode:        0x0000,
+		HardwareDescription: "all ok",
+		SyncRequired:        true,
+		SyncReason:          "task_parameters",
+	})
+	output := out.String()
+	for _, want := range []string{
+		"status: task parameters synchronization required",
+		"sync_reason: task parameter synchronization",
+		"sync_actions:",
+		"write task FACET MODE POMODORO_SECONDS",
+		"MODE: 0 normal, 1 pomodoro",
+		"hardware: all ok",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("system state output missing %q in %q", want, output)
+		}
+	}
+}
+
 func TestFormatterPrintsMalformedCommandAcknowledgement(t *testing.T) {
 	out := &bytes.Buffer{}
 	formatter := NewTextFormatter(out, &bytes.Buffer{})
@@ -143,6 +169,32 @@ func TestFormatterPrintsCommandProtocolErrorGuidance(t *testing.T) {
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("command guidance missing %q in %q", want, output)
+		}
+	}
+}
+
+func TestFormatterExplainsMissingCommandBackedReadResponse(t *testing.T) {
+	errOut := &bytes.Buffer{}
+	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)
+	formatter.PrintError(&timeflip.OperationError{
+		Operation: "read_task_parameters",
+		DeviceID:  "tf",
+		Command:   timeflip.CommandCode(0x14),
+		Err: &timeflip.ProtocolPayloadError{
+			Expected: "command result beginning with requested command byte",
+			Payload:  []byte{0x19, 0x00},
+		},
+	})
+	output := errOut.String()
+	for _, want := range []string{
+		"read warning:",
+		"no response for command 0x14",
+		"last_command_result: 0x1900",
+		"not documented as a task/tap response or as an unset value",
+		"firmware may not support this read command",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("read guidance missing %q in %q", want, output)
 		}
 	}
 }

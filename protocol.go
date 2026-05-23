@@ -130,14 +130,60 @@ func decodeSystemState(payload []byte) (SystemState, error) {
 	if err != nil {
 		return SystemState{}, ErrProtocol
 	}
+	statusDescription, syncReason := systemStatusDescription(status)
+	hardwareDescription := hardwareStatusDescription(hardware)
 	return SystemState{
-		StatusCode:    status,
-		HardwareCode:  hardware,
-		SyncRequired:  status>>8 == 0x02,
-		Reset:         status == 0x0100,
-		HardwareIssue: hardware != 0,
-		Raw:           append([]byte(nil), payload...),
+		StatusCode:          status,
+		StatusDescription:   statusDescription,
+		HardwareCode:        hardware,
+		HardwareDescription: hardwareDescription,
+		SyncRequired:        syncReason != "",
+		SyncReason:          syncReason,
+		Reset:               status == 0x0100,
+		HardwareIssue:       hardware != 0,
+		Raw:                 append([]byte(nil), payload...),
 	}, nil
+}
+
+func systemStatusDescription(status uint16) (description string, syncReason string) {
+	switch status {
+	case 0x0000:
+		return "all ok", ""
+	case 0x0100:
+		return "factory reset state", ""
+	case 0x0201:
+		return "time synchronization required", "time"
+	case 0x0202:
+		return "facet color synchronization required", "facet_color"
+	case 0x0203:
+		return "LED brightness synchronization required", "led_brightness"
+	case 0x0204:
+		return "blink interval synchronization required", "blink_interval"
+	case 0x0205:
+		return "task parameters synchronization required", "task_parameters"
+	case 0x0206:
+		return "auto-pause synchronization required", "auto_pause"
+	default:
+		if status>>8 == 0x02 {
+			return "unknown synchronization required", "unknown"
+		}
+		return "unknown status", ""
+	}
+}
+
+func hardwareStatusDescription(hardware uint16) string {
+	switch hardware {
+	case 0x0000:
+		return "all ok"
+	case 0x0201:
+		return "accelerometer error"
+	case 0x0202:
+		return "flash memory error"
+	case 0x0203:
+		return "accelerometer and flash memory error"
+	default:
+		return "unknown hardware status"
+	}
 }
 
 func decodeHistory(payload []byte) ([]HistoryEntry, HistoryStreamState, error) {

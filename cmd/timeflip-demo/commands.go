@@ -556,8 +556,10 @@ Writable configuration:
       Example: write color 1 65535 0 0
 
   write task FACET MODE POMODORO_SECONDS
-      Set task parameters for a facet. FACET and MODE are 0-255; POMODORO_SECONDS is unsigned 32-bit.
+      Set task parameters for a facet. FACET is 0-255; MODE is 0 normal or 1 pomodoro.
+      POMODORO_SECONDS is an unsigned 32-bit value used when MODE is 1.
       Example: write task 1 0 1500
+      Example: write task 1 1 1500
 
   write tap THRESHOLD LIMIT LATENCY WINDOW
       Set double-tap calibration bytes. Each value is 0-255.
