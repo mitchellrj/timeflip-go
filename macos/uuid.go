@@ -3,8 +3,6 @@ package macos
 import (
 	"fmt"
 	"strings"
-
-	timeflip "github.com/mitchellrj/timeflip-go"
 )
 
 const bluetoothBaseSuffix = "-0000-1000-8000-00805F9B34FB"
@@ -30,14 +28,6 @@ func normalizeUUID(id string) string {
 		return "0x" + id[4:8]
 	}
 	return id
-}
-
-func normalizeServiceID(id timeflip.ServiceID) timeflip.ServiceID {
-	return timeflip.ServiceID(normalizeUUID(string(id)))
-}
-
-func normalizeCharacteristicID(id timeflip.CharacteristicID) timeflip.CharacteristicID {
-	return timeflip.CharacteristicID(normalizeUUID(string(id)))
 }
 
 func isHex(s string) bool {

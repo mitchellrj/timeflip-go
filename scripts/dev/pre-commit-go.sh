@@ -38,9 +38,3 @@ check_gofmt
 check_go_mod_tidy
 go vet ./...
 go test -count=1 ./...
-
-if command -v golangci-lint >/dev/null 2>&1; then
-  golangci-lint run
-else
-  printf 'golangci-lint not found; skipping local lint. CI enforces lint.\n'
-fi

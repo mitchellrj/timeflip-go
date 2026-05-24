@@ -99,7 +99,7 @@ QualityGate "0..N" --> "1" GoModule : validates
 1. Local Quality Baseline:
    - Replace the current drifted `.pre-commit-config.yaml` with Go-specific hooks and retain only generic file hygiene hooks that apply to this repository.
    - Add executable scripts under `scripts/dev/` so pre-commit and GitHub Actions can share the same quality commands without duplicating shell logic.
-   - Keep pre-commit fast enough for normal development: formatting, module tidy verification, vet, tests, and optional lint through `golangci-lint` when installed.
+   - Keep pre-commit fast enough for normal development: formatting, module tidy verification, vet, tests, and a pinned `golangci-lint` hook that matches CI.
 
 2. GitHub Actions CI:
    - Create `.github/workflows/ci.yml` for pull requests and pushes to mainline branches.
@@ -112,6 +112,7 @@ QualityGate "0..N" --> "1" GoModule : validates
    - Configure CI to run `golangci/golangci-lint-action` with an explicit version compatible with Go 1.23.x.
    - Configure `govulncheck` through `golang/govulncheck-action` so dependency and standard-library vulnerabilities fail CI before release.
    - Add an OpenSSF Scorecard workflow that publishes results for the public Scorecard badge and uploads SARIF to GitHub code scanning.
+   - Add Dependabot version update coverage for Go modules, GitHub Actions, and pre-commit hook revisions.
 
 4. SemVer Release Flow:
    - Create `.github/workflows/release.yml` triggered only by tags matching `v*`.
@@ -160,10 +161,11 @@ QualityGate "0..N" --> "1" GoModule : validates
 2. CI Layer: GitHub Actions run deterministic checks on PRs and branch pushes with read-only repository permissions.
 3. Quality Assessment Layer: linters, vet, tests, race detector, coverage generation, and vulnerability scanning establish release readiness.
 4. Scorecard Layer: OpenSSF Scorecard publishes public score data and uploads SARIF findings.
-5. Release Validation Layer: SemVer tag validation blocks accidental or malformed releases.
-6. Trusted Build Layer: SLSA Go builder builds release artifacts in an isolated reusable workflow and signs provenance through GitHub OIDC.
-7. Distribution Layer: GitHub Releases receive binaries, checksums, source archives, and `.intoto.jsonl` provenance artifacts.
-8. Documentation Layer: README or docs record badges, local hooks, CI gates, release tagging, and provenance verification.
+5. Dependency Update Layer: Dependabot opens grouped weekly update PRs for Go modules, GitHub Actions, and pre-commit hooks.
+6. Release Validation Layer: SemVer tag validation blocks accidental or malformed releases.
+7. Trusted Build Layer: SLSA Go builder builds release artifacts in an isolated reusable workflow and signs provenance through GitHub OIDC.
+8. Distribution Layer: GitHub Releases receive binaries, checksums, source archives, and `.intoto.jsonl` provenance artifacts.
+9. Documentation Layer: README or docs record badges, local hooks, CI gates, release tagging, and provenance verification.
 
 ## Operations
 
@@ -191,7 +193,7 @@ QualityGate "0..N" --> "1" GoModule : validates
    - Verify `go mod tidy` without leaving changes by copying `go.mod` and `go.sum` to temporary files, running `go mod tidy`, comparing, and restoring originals before exit.
    - Run `go vet ./...`.
    - Run `go test -count=1 ./...`.
-   - If `golangci-lint` is installed locally, run `golangci-lint run`; otherwise print a short skip message and let CI enforce lint.
+   - Run lint through the pinned `golangci-lint` pre-commit hook rather than an optional PATH lookup.
 5. Completion Criteria:
    - `pre-commit run --all-files` can run without missing script errors.
    - The hook scope is limited to Go/module files and generic file hygiene.
@@ -296,6 +298,25 @@ QualityGate "0..N" --> "1" GoModule : validates
    - README Scorecard badge points at `https://api.scorecard.dev/projects/github.com/mitchellrj/timeflip-go/badge`.
    - The workflow can populate public Scorecard results after it runs on GitHub.
 
+### Create Dependabot Configuration - Dependency Update Coverage
+
+1. Responsibility: Add automated dependency update PRs for the delivery infrastructure and Go module.
+2. Files:
+   - `.github/dependabot.yml`
+3. Configuration:
+   - Use Dependabot config `version: 2`.
+   - Add `gomod` for `/` on a weekly Monday schedule in `Europe/London`.
+   - Add `github-actions` for `/` on a weekly Monday schedule in `Europe/London`.
+   - Add `pre-commit` for `/` on a weekly Monday schedule in `Europe/London`.
+   - Group each ecosystem's updates to reduce PR noise.
+   - Use scoped commit prefixes such as `build(deps)`, `build(actions)`, and `build(pre-commit)`.
+4. Constraints:
+   - Do not add ecosystems without manifests in this repository.
+   - Keep open PR limits modest.
+5. Completion Criteria:
+   - YAML parses successfully.
+   - Dependabot can update Go modules, GitHub Actions, and `.pre-commit-config.yaml` hook `rev` values.
+
 ### Create Release Workflow - SemVer Tag Validation and Publication
 
 1. Responsibility: Publish GitHub Releases only from valid SemVer tags.
@@ -372,7 +393,7 @@ QualityGate "0..N" --> "1" GoModule : validates
      - Run `pre-commit install`.
      - Run `pre-commit run --all-files`.
    - CI:
-     - Summarize checks: formatting, module tidy, vet, Linux race tests, coverage, lint, vulnerability scan.
+     - Summarize checks: formatting, module tidy, vet, Linux race tests, coverage, lint, vulnerability scan, and weekly Dependabot update coverage.
    - Release:
      - Create annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
      - Push tag: `git push origin vX.Y.Z`.

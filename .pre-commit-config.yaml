@@ -32,3 +32,10 @@ repos:
         language: system
         pass_filenames: false
         files: ^scripts/.*\.sh$
+
+  - repo: https://github.com/golangci/golangci-lint
+    rev: v1.64.8
+    hooks:
+      - id: golangci-lint
+        args: [--timeout=5m]
+        files: ^.*\.go$

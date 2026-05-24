@@ -414,7 +414,6 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 	if err != nil {
 		return err
 	}
-	var result timeflip.CommandResult
 	switch strings.ToLower(args[0]) {
 	case "password":
 		ok, err := app.in.Confirm("Change device password?")
@@ -438,12 +437,14 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if confirm != password {
 			return fmt.Errorf("passwords do not match")
 		}
-		result, err = session.SetPassword(ctx, password, app.commandOptions())
+		result, err := session.SetPassword(ctx, password, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "name":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: write name NAME")
 		}
-		result, err = session.SetName(ctx, args[1], app.commandOptions())
+		result, err := session.SetName(ctx, args[1], app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "lock":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: write lock on|off")
@@ -452,7 +453,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetLock(ctx, enabled, app.commandOptions())
+		result, err := session.SetLock(ctx, enabled, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "pause":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: write pause on|off")
@@ -461,7 +463,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetPause(ctx, enabled, app.commandOptions())
+		result, err := session.SetPause(ctx, enabled, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "autopause":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: write autopause MINUTES")
@@ -470,7 +473,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetAutoPause(ctx, minutes, app.commandOptions())
+		result, err := session.SetAutoPause(ctx, minutes, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "led":
 		if len(args) < 3 {
 			return fmt.Errorf("usage: write led BRIGHTNESS_PERCENT BLINK_SECONDS")
@@ -483,7 +487,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetLED(ctx, brightness, blink, app.commandOptions())
+		result, err := session.SetLED(ctx, brightness, blink, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "color":
 		if len(args) < 5 {
 			return fmt.Errorf("usage: write color FACET R G B")
@@ -504,7 +509,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetFacetColor(ctx, facet, timeflip.RGB{R: r, G: g, B: b}, app.commandOptions())
+		result, err := session.SetFacetColor(ctx, facet, timeflip.RGB{R: r, G: g, B: b}, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "task":
 		if len(args) < 4 {
 			return fmt.Errorf("usage: write task FACET MODE POMODORO_SECONDS")
@@ -521,7 +527,8 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetTaskParameters(ctx, timeflip.TaskParameters{Facet: facet, Mode: mode, PomodoroLimitSeconds: seconds}, app.commandOptions())
+		result, err := session.SetTaskParameters(ctx, timeflip.TaskParameters{Facet: facet, Mode: mode, PomodoroLimitSeconds: seconds}, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	case "tap":
 		if len(args) < 5 {
 			return fmt.Errorf("usage: write tap THRESHOLD LIMIT LATENCY WINDOW")
@@ -542,15 +549,19 @@ func runWrite(ctx context.Context, app *DemoApp, args []string) error {
 		if parseErr != nil {
 			return parseErr
 		}
-		result, err = session.SetTapSettings(ctx, timeflip.TapSettings{Threshold: threshold, Limit: limit, Latency: latency, Window: window}, app.commandOptions())
+		result, err := session.SetTapSettings(ctx, timeflip.TapSettings{Threshold: threshold, Limit: limit, Latency: latency, Window: window}, app.commandOptions())
+		return app.finishWriteResult(result, err)
 	default:
 		app.out.PrintLine(writeUsage())
 		return fmt.Errorf("unknown write kind: %s", args[0])
 	}
+}
+
+func (a *DemoApp) finishWriteResult(result timeflip.CommandResult, err error) error {
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
-		app.out.PrintCommandResult(result)
+		a.out.PrintCommandResult(result)
 		if err == nil {
-			app.out.PrintSuggestions([]string{"read system", "read info", "stream"})
+			a.out.PrintSuggestions([]string{"read system", "read info", "stream"})
 		}
 	}
 	return err
@@ -609,7 +620,6 @@ func runCommand(ctx context.Context, app *DemoApp, args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: command reset-task-info|factory-reset")
 	}
-	var result timeflip.CommandResult
 	switch strings.ToLower(args[0]) {
 	case "reset-task-info":
 		ok, err := app.in.Confirm("Reset task information?")
@@ -619,7 +629,8 @@ func runCommand(ctx context.Context, app *DemoApp, args []string) error {
 		if !ok {
 			return fmt.Errorf("reset task info canceled")
 		}
-		result, err = session.ResetTaskInfo(ctx, app.commandOptions())
+		result, err := session.ResetTaskInfo(ctx, app.commandOptions())
+		return app.finishCommandResult(result, err)
 	case "factory-reset":
 		if app.state.SelectedDeviceID == "" {
 			return fmt.Errorf("selected device is required for factory reset confirmation")
@@ -631,14 +642,18 @@ func runCommand(ctx context.Context, app *DemoApp, args []string) error {
 		if typed != string(app.state.SelectedDeviceID) {
 			return fmt.Errorf("factory reset confirmation did not match device ID")
 		}
-		result, err = session.FactoryReset(ctx, app.commandOptions())
+		result, err := session.FactoryReset(ctx, app.commandOptions())
+		return app.finishCommandResult(result, err)
 	default:
 		return fmt.Errorf("unknown command kind: %s", args[0])
 	}
+}
+
+func (a *DemoApp) finishCommandResult(result timeflip.CommandResult, err error) error {
 	if result.Command.Code != 0 || len(result.Payload) > 0 {
-		app.out.PrintCommandResult(result)
+		a.out.PrintCommandResult(result)
 		if err == nil {
-			app.out.PrintSuggestions([]string{"read system", "read info"})
+			a.out.PrintSuggestions([]string{"read system", "read info"})
 		}
 	}
 	return err
