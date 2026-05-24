@@ -522,6 +522,9 @@ func (f *fakeDemoConnection) Read(_ context.Context, ch timeflip.CharacteristicI
 	if f.readPayload != nil {
 		return append([]byte(nil), f.readPayload...), nil
 	}
+	if ch == protocol.CommandResultOutput {
+		return []byte{0x02}, nil
+	}
 	return []byte{0, 0, 0, 0}, nil
 }
 

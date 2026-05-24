@@ -27,6 +27,11 @@ type Transport struct {
 	enabled    bool
 	scanning   bool
 	discovered map[timeflip.DeviceID]bluetooth.ScanResult
+
+	// AllowNameFallback permits Connect to match an undiscovered peripheral by
+	// advertised name. Leave false to avoid connecting to a spoofed name when a
+	// stable device ID/address was requested.
+	AllowNameFallback bool
 }
 
 // NewTransport creates a MacOS BLE transport.
@@ -184,7 +189,7 @@ func (t *Transport) Connect(ctx context.Context, id timeflip.DeviceID) (timeflip
 		var found bool
 		err := t.scan(ctx, func(candidate bluetooth.ScanResult) bool {
 			peripheral := t.remember(candidate)
-			if peripheral.ID == id || timeflip.DeviceID(peripheral.Name) == id {
+			if matchesConnectCandidate(peripheral, id, t.AllowNameFallback) {
 				result = candidate
 				found = true
 				return true
@@ -247,6 +252,16 @@ func (t *Transport) Connect(ctx context.Context, id timeflip.DeviceID) (timeflip
 		_ = conn.Close(context.Background())
 		return nil, operationErr("macos_connect", id, result.err)
 	}
+}
+
+func matchesConnectCandidate(peripheral timeflip.Peripheral, requestedID timeflip.DeviceID, allowNameFallback bool) bool {
+	if requestedID == "" {
+		return false
+	}
+	if peripheral.ID == requestedID {
+		return true
+	}
+	return allowNameFallback && peripheral.Name != "" && timeflip.DeviceID(peripheral.Name) == requestedID
 }
 
 func (t *Transport) lookup(id timeflip.DeviceID) (bluetooth.ScanResult, bool) {

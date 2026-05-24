@@ -51,9 +51,17 @@ func (e *ProtocolPayloadError) Error() string {
 	}
 	msg += fmt.Sprintf("; got %d byte(s)", len(e.Payload))
 	if len(e.Payload) > 0 {
-		msg += fmt.Sprintf("; raw=0x%X", e.Payload)
+		msg += "; raw payload redacted"
 	}
 	return msg
+}
+
+// RawPayloadHex returns the full raw payload for trusted diagnostics.
+func (e *ProtocolPayloadError) RawPayloadHex() string {
+	if e == nil || len(e.Payload) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("0x%X", e.Payload)
 }
 
 // Unwrap returns the protocol sentinel.

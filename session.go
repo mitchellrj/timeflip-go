@@ -24,8 +24,15 @@ type Session struct {
 }
 
 const (
+	maxCommandStatusPolls = 256
+	maxCommandOutputPolls = 256
+	maxHistoryV3Packets   = 4096
+)
+
+var (
 	authorizationResultWindow = 750 * time.Millisecond
 	authorizationPollInterval = 50 * time.Millisecond
+	commandPollInterval       = 50 * time.Millisecond
 )
 
 // Authorize writes a six-byte password to the device password characteristic.
@@ -55,25 +62,23 @@ func passwordOrDefault(password string) (string, error) {
 func (s *Session) readAuthorizationResult(ctx context.Context) (AuthorizationResult, error) {
 	deadline := time.NewTimer(authorizationResultWindow)
 	defer deadline.Stop()
-	var wrongPayload []byte
 	for {
 		payload, err := s.conn.Read(ctx, charCommandResult)
 		if err != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return AuthorizationResult{}, wrapContextErr("authorize", s.deviceID, "", 0, ctxErr)
 			}
-			return AuthorizationResult{Authorized: true}, nil
+			return AuthorizationResult{}, wrapContextErr("authorize", s.deviceID, "", 0, err)
 		}
 		if len(payload) == 0 {
-			return AuthorizationResult{Authorized: true}, nil
+			return AuthorizationResult{}, &OperationError{Operation: "authorize", DeviceID: s.deviceID, Err: newProtocolPayloadError("authorization result 0x02 success or 0x01 failure", payload)}
 		}
 		switch payload[0] {
 		case 0x02:
 			return AuthorizationResult{Authorized: true}, nil
 		case 0x01:
-			wrongPayload = append(wrongPayload[:0], payload...)
 		default:
-			return AuthorizationResult{Authorized: true}, nil
+			return AuthorizationResult{}, &OperationError{Operation: "authorize", DeviceID: s.deviceID, Err: newProtocolPayloadError("authorization result 0x02 success or 0x01 failure", payload)}
 		}
 
 		timer := time.NewTimer(authorizationPollInterval)
@@ -86,7 +91,7 @@ func (s *Session) readAuthorizationResult(ctx context.Context) (AuthorizationRes
 			return AuthorizationResult{}, &OperationError{
 				Operation: "authorize",
 				DeviceID:  s.deviceID,
-				Err:       fmt.Errorf("%w: password check returned 0x01; raw=0x%X", ErrAuthorizationFailed, wrongPayload),
+				Err:       fmt.Errorf("%w: password check returned failure result", ErrAuthorizationFailed),
 			}
 		case <-timer.C:
 		}
@@ -276,7 +281,7 @@ func (s *Session) readHistoryV3(ctx context.Context, _ HistoryRequest) ([]Histor
 	}
 	var entries []HistoryEntry
 	var lastNonZero []byte
-	for {
+	for packets := 0; packets < maxHistoryV3Packets; packets++ {
 		raw, err := s.conn.Read(ctx, charCommandResult)
 		if err != nil {
 			return nil, wrapContextErr("read_history", s.deviceID, "", cmdHistoryRead, err)
@@ -297,6 +302,7 @@ func (s *Session) readHistoryV3(ctx context.Context, _ HistoryRequest) ([]Histor
 		lastNonZero = append(lastNonZero[:0], raw...)
 		entries = append(entries, decoded...)
 	}
+	return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Command: cmdHistoryRead, Err: newProtocolPayloadError("v3 history completion packet within packet budget", lastNonZero)}
 }
 
 // ReadTaskParameters reads task parameters for a facet.
@@ -385,7 +391,7 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 
 func (s *Session) readCommandStatusFor(ctx context.Context, code CommandCode, operation string) (CommandStatus, error) {
 	var last []byte
-	for {
+	for polls := 0; polls < maxCommandStatusPolls; polls++ {
 		payload, err := s.conn.Read(ctx, charCommand)
 		if err != nil {
 			return CommandStatus{}, wrapContextErr(operation, s.deviceID, "", code, err)
@@ -398,7 +404,7 @@ func (s *Session) readCommandStatusFor(ctx context.Context, code CommandCode, op
 			}
 			return status, nil
 		}
-		timer := time.NewTimer(50 * time.Millisecond)
+		timer := time.NewTimer(commandPollInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -406,11 +412,12 @@ func (s *Session) readCommandStatusFor(ctx context.Context, code CommandCode, op
 		case <-timer.C:
 		}
 	}
+	return CommandStatus{Code: code, Raw: append([]byte(nil), last...)}, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command characteristic acknowledgement beginning with requested command byte within poll budget", last)}
 }
 
 func (s *Session) readCommandOutputFor(ctx context.Context, code CommandCode, operation string, accept func([]byte) bool) ([]byte, error) {
 	var last []byte
-	for {
+	for polls := 0; polls < maxCommandOutputPolls; polls++ {
 		payload, err := s.conn.Read(ctx, charCommandResult)
 		if err != nil {
 			return nil, wrapContextErr(operation, s.deviceID, "", code, err)
@@ -430,7 +437,7 @@ func (s *Session) readCommandOutputFor(ctx context.Context, code CommandCode, op
 		if accept != nil && accept(payload) {
 			return append([]byte(nil), payload...), nil
 		}
-		timer := time.NewTimer(50 * time.Millisecond)
+		timer := time.NewTimer(commandPollInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()
@@ -438,6 +445,7 @@ func (s *Session) readCommandOutputFor(ctx context.Context, code CommandCode, op
 		case <-timer.C:
 		}
 	}
+	return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command-result output beginning with requested command byte within poll budget", last)}
 }
 
 func isUnassignedCommandResult(payload []byte) bool {
@@ -599,33 +607,53 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 	switch n.Characteristic {
 	case charFacets:
 		payload, err := decodeFacet(n.Payload)
+		if !includeRaw {
+			payload.Raw = nil
+		}
 		event.Kind, event.Payload = EventFacet, payload
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charDoubleTap:
 		payload, err := decodeDoubleTap(n.Payload)
+		if !includeRaw {
+			payload.Raw = nil
+		}
 		event.Kind, event.Payload = EventDoubleTap, payload
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charBattery:
 		payload, err := decodeBattery(n.Payload)
+		if !includeRaw {
+			payload.Raw = nil
+		}
 		event.Kind, event.Payload = EventBattery, payload
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charSystemState:
 		payload, err := decodeSystemState(n.Payload)
+		if !includeRaw {
+			payload.Raw = nil
+		}
 		event.Kind, event.Payload = EventSystemState, payload
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charEvents:
 		payload := append([]byte(nil), n.Payload...)
 		if kind, decoded, ok := decodeTimeFlipTextEvent(payload); ok {
+			if !includeRaw {
+				decoded = redactTypedEventRaw(decoded)
+			}
 			event.Kind, event.Payload = kind, decoded
 		} else {
 			event.Kind, event.Payload = EventRaw, payload
 		}
-		if len(event.Raw) == 0 {
+		if event.Kind == EventRaw && len(event.Raw) == 0 {
 			event.Raw = payload
 		}
 		return event, nil
 	case charHistory:
 		payload, _, err := decodeHistory(n.Payload)
+		if !includeRaw {
+			for i := range payload {
+				payload[i].Raw = nil
+			}
+		}
 		event.Kind, event.Payload = EventHistory, payload
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	default:
@@ -634,6 +662,19 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 			return event, nil
 		}
 		return Event{}, &OperationError{Operation: "events", DeviceID: s.deviceID, Stage: NotificationSourceName(n.Characteristic), Err: ErrProtocol}
+	}
+}
+
+func redactTypedEventRaw(payload any) any {
+	switch v := payload.(type) {
+	case FacetEvent:
+		v.Raw = nil
+		return v
+	case DoubleTapEvent:
+		v.Raw = nil
+		return v
+	default:
+		return payload
 	}
 }
 

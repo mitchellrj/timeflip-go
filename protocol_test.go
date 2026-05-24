@@ -20,8 +20,13 @@ func TestIsSupportedPeripheral(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "name fallback",
+			name: "name heuristic fallback is supported but not authenticated identity",
 			p:    Peripheral{ID: "b", Name: "TIMEFLIP2"},
+			want: true,
+		},
+		{
+			name: "metadata model heuristic fallback is supported but not authenticated identity",
+			p:    Peripheral{ID: "model", Metadata: map[string]string{"model": "TimeFlip 2"}},
 			want: true,
 		},
 		{

@@ -75,7 +75,8 @@ func TestPairManualOSActionAndPasswordChange(t *testing.T) {
 
 func TestPairBlankPasswordUsesDefaultAuthorization(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
-		charSystemState: {0x00, 0x00, 0x00, 0x00},
+		charCommandResult: {0x02},
+		charSystemState:   {0x00, 0x00, 0x00, 0x00},
 	}}
 	client, err := NewClient(&fakeTransport{
 		connections: map[DeviceID]*fakeConnection{"tf": conn},

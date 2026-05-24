@@ -29,6 +29,14 @@ events, errs, err := session.Events(ctx, timeflip.EventOptions{Buffer: 16})
 
 Pairing is a staged workflow for new or reset devices. TimeFlip2 always requires password authorization before device commands; the factory default is ASCII `000000`, encoded as bytes `0x30 0x30 0x30 0x30 0x30 0x30`. Passing an empty password to `Authorize`, `Pair`, or device-side unpair/reset flows uses that default. Pairing can include TimeFlip password authorization, optional password changes, verification reads, and OS-level pairing where the active OS adapter directly supports it. If OS pairing is not directly supported, the result can include a `ManualAction` with the device ID and instructions for caller- or user-initiated action.
 
+## Security Notes
+
+The library assumes the consuming application is trusted, but BLE advertisements and device payloads are untrusted. Device support detection can use advertised names or metadata as a convenience heuristic; this is not authenticated identity. Applications that need stronger identity continuity should remember and reconnect by the stable device ID/address reported by their transport.
+
+The TimeFlip password is written as six bytes to the device password characteristic. Treat passwords as sensitive, avoid logging them, and use an empty password only when intentionally authorizing with the factory default `000000` for a new or reset device. The library does not persist passwords, device IDs, authorization state, event history, or payloads across sessions.
+
+Protocol errors redact raw payload bytes from default error strings. Trusted diagnostic code can inspect `ProtocolPayloadError.Payload` or call `RawPayloadHex()` when full bytes are needed for hardware troubleshooting. Event raw bytes for typed events are emitted only when `EventOptions.IncludeRaw` is true; raw/unknown events still carry their raw payload as the event payload because that is the event content.
+
 ## Unpairing
 
 Unpairing is also staged. When device-side reset behavior such as factory reset is requested, the client authorizes with the supplied password or the default password when the request password is empty. OS unpairing is attempted only where the adapter supports it; otherwise the library returns a manual action.
