@@ -35,6 +35,12 @@ jobs:
           RUN_GO_RACE: ${{ matrix.os == 'ubuntu-latest' && '1' || '0' }}
         run: scripts/dev/go-quality.sh
 
+      - name: Run Go fuzz smoke test
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          GO_FUZZTIME: 10s
+        run: scripts/dev/go-fuzz-smoke.sh
+
       - name: Upload coverage
         uses: actions/upload-artifact@v4
         if: always()

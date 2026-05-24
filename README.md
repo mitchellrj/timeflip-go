@@ -126,6 +126,14 @@ GitHub Actions runs the same Go quality script on Ubuntu and macOS, runs race te
 
 Dependabot checks Go modules, GitHub Actions, and pre-commit hook revisions weekly.
 
+The root package includes a native Go fuzz target for protocol payload decoding. Seed corpus entries run with normal `go test`; run an active local fuzzing session with:
+
+```sh
+go test -run='^$' -fuzz=FuzzDecodeProtocolPayloads -fuzztime=30s .
+```
+
+CI runs a short fuzz-smoke pass on Ubuntu.
+
 ## Releases and Provenance
 
 Releases are published from SemVer tags with a leading `v`:

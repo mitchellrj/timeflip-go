@@ -104,7 +104,7 @@ QualityGate "0..N" --> "1" GoModule : validates
 2. GitHub Actions CI:
    - Create `.github/workflows/ci.yml` for pull requests and pushes to mainline branches.
    - Use `actions/checkout`, `actions/setup-go` with `go-version-file: go.mod`, and Go module caching.
-   - Run quality gates in clear stages: `gofmt` check, `go mod tidy` cleanliness check, `go vet ./...`, `go test -count=1 ./...`, Linux `go test -count=1 -race ./...`, `go test -coverprofile=build/coverage.out ./...`, demo build to a temporary or ignored path, and dependency vulnerability scanning with `govulncheck`.
+   - Run quality gates in clear stages: `gofmt` check, `go mod tidy` cleanliness check, `go vet ./...`, `go test -count=1 ./...`, Linux `go test -count=1 -race ./...`, `go test -coverprofile=build/coverage.out ./...`, a short Go fuzz-smoke pass, demo build to a temporary or ignored path, and dependency vulnerability scanning with `govulncheck`.
    - Use least-privilege permissions (`contents: read`) for CI and avoid release permissions outside the release workflow.
 
 3. Static Quality and Security Assessment:
@@ -113,6 +113,7 @@ QualityGate "0..N" --> "1" GoModule : validates
    - Configure `govulncheck` through `golang/govulncheck-action` so dependency and standard-library vulnerabilities fail CI before release.
    - Add an OpenSSF Scorecard workflow that publishes results for the public Scorecard badge and uploads SARIF to GitHub code scanning.
    - Add Dependabot version update coverage for Go modules, GitHub Actions, and pre-commit hook revisions.
+   - Add native Go fuzzing for untrusted protocol payload decoders, with seed corpus execution under normal `go test` and a bounded CI fuzz-smoke run.
 
 4. SemVer Release Flow:
    - Create `.github/workflows/release.yml` triggered only by tags matching `v*`.
@@ -205,6 +206,7 @@ QualityGate "0..N" --> "1" GoModule : validates
 2. Files:
    - `scripts/dev/go-quality.sh`
    - `scripts/dev/pre-commit-go.sh`
+   - `scripts/dev/go-fuzz-smoke.sh`
 3. Methods:
    - Implement `go-quality.sh` as the comprehensive CI command set:
      - Check formatting with `gofmt -l`.
@@ -218,6 +220,8 @@ QualityGate "0..N" --> "1" GoModule : validates
      - Check module tidiness.
      - Run `go vet ./...`.
      - Run `go test -count=1 ./...`.
+   - Implement `go-fuzz-smoke.sh` as a bounded CI fuzz command:
+     - Run `go test -run='^$' -fuzz=FuzzDecodeProtocolPayloads -fuzztime="${GO_FUZZTIME:-10s}" .`.
    - Make both scripts executable.
 4. Constraints:
    - Do not create files outside `scripts/dev`.
@@ -258,6 +262,7 @@ QualityGate "0..N" --> "1" GoModule : validates
      - Use `actions/checkout` with a pinned major tag.
      - Use `actions/setup-go` with `go-version-file: go.mod` and `cache: true`.
      - Run `scripts/dev/go-quality.sh` with `RUN_GO_RACE=1` for `ubuntu-latest` and `RUN_GO_RACE=0` for `macos-latest`.
+     - Run `scripts/dev/go-fuzz-smoke.sh` on `ubuntu-latest`.
      - Upload `build/coverage.out` as an artifact if generated.
      - Run `golangci/golangci-lint-action` with an explicit version.
      - Run `golang/govulncheck-action` with `go-version-file: go.mod` and `package: ./...`.
@@ -297,6 +302,29 @@ QualityGate "0..N" --> "1" GoModule : validates
 5. Completion Criteria:
    - README Scorecard badge points at `https://api.scorecard.dev/projects/github.com/mitchellrj/timeflip-go/badge`.
    - The workflow can populate public Scorecard results after it runs on GitHub.
+
+### Add Go Fuzzing - Protocol Payload Decoders
+
+1. Responsibility: Add native Go fuzzing for the byte decoders that process untrusted BLE payloads.
+2. Files:
+   - `protocol_fuzz_test.go`
+   - `scripts/dev/go-fuzz-smoke.sh`
+   - `.github/workflows/ci.yml`
+   - `README.md`
+3. Fuzz Target:
+   - Add `FuzzDecodeProtocolPayloads(f *testing.F)` in the root package so it can exercise unexported decoder helpers.
+   - Seed representative payloads for command acknowledgements, battery, facet, double-tap, system state, v4 history, and v3 history.
+   - For invalid payloads, assert only that decoders do not panic.
+   - For valid payloads, assert stable invariants such as raw byte preservation, bounded history entry counts, battery percentage range, and pause/facet interpretation.
+4. CI Integration:
+   - Run seed corpus entries through normal `go test`.
+   - Run a bounded Ubuntu fuzz-smoke command with `-fuzz=FuzzDecodeProtocolPayloads` and `-fuzztime=10s`.
+5. Constraints:
+   - Fuzz target must be fast, deterministic, and avoid global mutable state.
+   - Do not commit generated fuzz corpus files unless they represent minimized regression inputs for a fixed bug.
+6. Completion Criteria:
+   - `go test -count=1 ./...` passes.
+   - `scripts/dev/go-fuzz-smoke.sh` passes.
 
 ### Create Dependabot Configuration - Dependency Update Coverage
 
@@ -393,7 +421,7 @@ QualityGate "0..N" --> "1" GoModule : validates
      - Run `pre-commit install`.
      - Run `pre-commit run --all-files`.
    - CI:
-     - Summarize checks: formatting, module tidy, vet, Linux race tests, coverage, lint, vulnerability scan, and weekly Dependabot update coverage.
+     - Summarize checks: formatting, module tidy, vet, Linux race tests, fuzz smoke, coverage, lint, vulnerability scan, and weekly Dependabot update coverage.
    - Release:
      - Create annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`.
      - Push tag: `git push origin vX.Y.Z`.
@@ -507,7 +535,7 @@ QualityGate "0..N" --> "1" GoModule : validates
 
 5. Quality Constraints:
    - `go test -count=1 ./...` must pass before handoff.
-   - CI must fail on formatting drift, module tidy drift, vet failures, race-test failures, lint failures, and vulnerability findings.
+   - CI must fail on formatting drift, module tidy drift, vet failures, race-test failures, fuzz-smoke failures, lint failures, and vulnerability findings.
    - Pre-commit must not require tools that are absent without a clear skip or install instruction.
 
 6. Integration Constraints:
