@@ -4,6 +4,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/mitchellrj/timeflip-go)](https://goreportcard.com/report/github.com/mitchellrj/timeflip-go)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/mitchellrj/timeflip-go/badge)](https://scorecard.dev/viewer/?uri=github.com/mitchellrj/timeflip-go)
 [![SLSA provenance](https://img.shields.io/badge/SLSA%20provenance-L3-blue)](https://github.com/mitchellrj/timeflip-go/actions/workflows/release.yml)
+[![License: WTFPL](https://img.shields.io/badge/License-WTFPL-blue.svg)](http://www.wtfpl.net/about/)
 
 `timeflip-go` is a small Go library for integrating with TimeFlip2 devices over BLE without depending on the mobile app or cloud API.
 
@@ -157,3 +158,7 @@ slsa-verifier verify-artifact ./timeflip-demo-linux-amd64 \
 ```
 
 The provenance verifies artifact origin and build metadata. Consumers should still check the release tag, checksums, and their own deployment requirements.
+
+## License
+
+`timeflip-go` is released under the [WTFPL](LICENSE).
