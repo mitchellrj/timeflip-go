@@ -36,7 +36,8 @@ func TestListDevicesFiltersUnsupported(t *testing.T) {
 
 func TestPairManualOSActionAndPasswordChange(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
-		charCommandResult: {0x30, 0x02},
+		charCommand:       {byte(cmdSetPassword), 0x02},
+		charCommandResult: {0x02},
 		charSystemState:   {0x00, 0x00, 0x00, 0x00},
 	}}
 	ft := &fakeTransport{
@@ -111,7 +112,8 @@ func TestPairBlankPasswordUsesDefaultAuthorization(t *testing.T) {
 
 func TestUnpairFactoryResetBlankPasswordUsesDefaultAuthorization(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
-		charCommandResult: {byte(cmdFactoryReset), 0x02},
+		charCommand:       {byte(cmdFactoryReset), 0x02},
+		charCommandResult: {0x02},
 	}}
 	client, err := NewClient(&fakeTransport{
 		connections: map[DeviceID]*fakeConnection{"tf": conn},

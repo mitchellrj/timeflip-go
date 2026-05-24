@@ -6,6 +6,7 @@ import (
 )
 
 const (
+	CommandHistoryRead    byte = 0x01
 	CommandLock           byte = 0x04
 	CommandAutoPause      byte = 0x05
 	CommandPause          byte = 0x06
@@ -38,12 +39,13 @@ func EncodeCommand(code byte, payload []byte) ([]byte, error) {
 	return out, nil
 }
 
-// DecodeCommandStatus decodes a two-byte command status.
+// DecodeCommandStatus decodes a command-characteristic acknowledgement.
 func DecodeCommandStatus(payload []byte) (byte, bool, error) {
 	if len(payload) < 2 {
 		return 0, false, ErrInvalidPayload
 	}
-	switch payload[1] {
+	result := payload[1]
+	switch result {
 	case 0x02:
 		return payload[0], true, nil
 	case 0x01:
@@ -56,6 +58,9 @@ func DecodeCommandStatus(payload []byte) (byte, bool, error) {
 // DecodeTrackerStatus decodes command 0x10 response bytes.
 func DecodeTrackerStatus(payload []byte) (bool, bool, uint16, error) {
 	if len(payload) < 4 {
+		return false, false, 0, ErrInvalidPayload
+	}
+	if (payload[0] != 0x01 && payload[0] != 0x02) || (payload[1] != 0x01 && payload[1] != 0x02) {
 		return false, false, 0, ErrInvalidPayload
 	}
 	lock := payload[0] == 0x01

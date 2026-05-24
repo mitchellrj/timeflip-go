@@ -2,4 +2,5 @@
 
 build/
 *.zip
+*.log
 /android-app

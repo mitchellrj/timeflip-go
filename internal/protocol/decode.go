@@ -69,6 +69,38 @@ func DecodeHistoryPacket(payload []byte) (entries []HistoryEntry, complete bool,
 	return []HistoryEntry{entry}, false, entry.PreviousEventNumber, nil
 }
 
+// DecodeHistoryPacketV3 decodes v3 21-byte history packages.
+func DecodeHistoryPacketV3(payload []byte) (entries []HistoryEntry, complete bool, err error) {
+	if len(payload) != 21 {
+		return nil, false, ErrInvalidPayload
+	}
+	allZero := true
+	for _, b := range payload {
+		if b != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil, true, nil
+	}
+	entries = make([]HistoryEntry, 0, 7)
+	for i := 0; i < 21; i += 3 {
+		block := payload[i : i+3]
+		side := block[2] >> 2
+		duration := uint32(block[0])<<16 | uint32(block[1])<<8 | uint32(block[2]&0x03)
+		if duration == 0 && side == 0 {
+			continue
+		}
+		entries = append(entries, HistoryEntry{
+			Side:            side,
+			DurationSeconds: duration,
+			Raw:             append([]byte(nil), block...),
+		})
+	}
+	return entries, false, nil
+}
+
 // HistoryEntry is the protocol-level history representation.
 type HistoryEntry struct {
 	EventNumber         uint32

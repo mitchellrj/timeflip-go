@@ -97,6 +97,39 @@ func TestDecodeHistoryPacket(t *testing.T) {
 	}
 }
 
+func TestDecodeHistoryPacketV3(t *testing.T) {
+	payload := make([]byte, 21)
+	payload[0] = 0x00
+	payload[1] = 0x01
+	payload[2] = byte(7<<2) | 0x02
+
+	entries, stream, err := decodeHistoryV3(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stream.Complete || len(entries) != 1 {
+		t.Fatalf("unexpected stream=%+v entries=%d", stream, len(entries))
+	}
+	if entries[0].Facet != 7 || entries[0].DurationSeconds != 258 {
+		t.Fatalf("unexpected v3 entry: %+v", entries[0])
+	}
+}
+
+func TestInferProtocolVersionFromFirmware(t *testing.T) {
+	if got := inferProtocolVersion("TFv3.1"); got != ProtocolV3 {
+		t.Fatalf("expected v3, got %q", got)
+	}
+	if got := inferProtocolVersion("FW_v3.47"); got != ProtocolV4 {
+		t.Fatalf("expected v4 for firmware split, got %q", got)
+	}
+	if got := inferProtocolVersion("TFv4.0"); got != ProtocolV4 {
+		t.Fatalf("expected v4, got %q", got)
+	}
+	if got := inferProtocolVersion("unknown"); got != ProtocolAuto {
+		t.Fatalf("expected auto, got %q", got)
+	}
+}
+
 func TestEncodeCommandValidation(t *testing.T) {
 	_, err := encodeCommand(Command{Code: cmdName, Payload: make([]byte, 20)})
 	if err == nil {

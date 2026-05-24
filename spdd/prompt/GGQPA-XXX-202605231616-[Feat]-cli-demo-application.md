@@ -26,6 +26,7 @@ class DemoConfig {
     +int EventBuffer
     +bool IncludeRawEvents
     +bool IncludeUnsupportedDevices
+    +string TraceBLEPath
 }
 
 class DemoState {
@@ -132,6 +133,7 @@ Session "1" --> "0..N" Event : streams
    - Instantiate `timeflip.NewClient(macos.NewTransport(), timeflip.Config{CommunicationTimeout: flagValue})` from the demo entrypoint.
    - Model current device selection, active session, authorization flag, and active event stream cancellation as process-local demo state.
    - Allow a global `-timeout` flag for client communication timeout, a `-command-timeout` flag for command operations, an `-event-buffer` flag for streaming buffer size, an `-include-raw` flag for event display, and an `-include-unsupported` flag for discovery diagnostics.
+   - Allow a `-trace-ble PATH` flag that wraps the demo transport and records raw BLE reads, writes, subscriptions, notifications, OS actions, and errors for the CLI session; `-trace-ble -` writes to stderr and traces include password characteristic bytes.
    - Allow a `-no-color` flag to disable ANSI color output. Color should be enabled by default only when stdout is a supported TTY.
    - Maintain in-process command history for the interactive prompt when stdin/stdout are a supported TTY, with up/down arrow navigation through previous commands.
    - Print contextual errors without terminating the prompt when recovery is possible; exit non-zero only for startup configuration failure or non-interactive fatal setup failure.
@@ -190,7 +192,9 @@ Session "1" --> "0..N" Event : streams
      - `-event-buffer int`: event channel buffer, default `16`.
      - `-include-raw bool`: include raw event bytes in stream output.
      - `-include-unsupported bool`: include unsupported devices in discovery output.
+     - `-trace-ble path`: write raw BLE operation logs for the CLI session; `-` means stderr.
    - Create `timeflip.Client` with `macos.NewTransport()`.
+   - If trace logging is enabled, wrap the MacOS transport before constructing the client so pairing, authorization, reads, writes, and streaming notifications are traced.
    - Print a short startup status with configured timeout values and current MacOS adapter note when operations return unsupported.
    - Start an interactive loop that reads one line at a time until `exit`, EOF, interrupt, or unrecoverable startup error.
 4. Completion Criteria:
@@ -207,7 +211,10 @@ Session "1" --> "0..N" Event : streams
    - `DemoConfig.EventBuffer int`: converted to `timeflip.EventOptions.Buffer`.
    - `DemoConfig.IncludeRawEvents bool`: converted to `timeflip.EventOptions.IncludeRaw`.
    - `DemoConfig.IncludeUnsupportedDevices bool`: converted to `timeflip.ScanFilter.IncludeUnsupported`.
+   - `DemoConfig.TraceBLEPath string`: startup trace destination, empty when BLE tracing is disabled.
    - `DemoState.SelectedDeviceID timeflip.DeviceID`: current device for operations when command args omit a device ID.
+   - `DemoState.SelectedDeviceName string`: process-local advertised name for the selected device when learned from BLE discovery.
+   - `DemoState.KnownDeviceNames map[timeflip.DeviceID]string`: process-local advertised names learned from the latest scans.
    - `DemoState.ActiveSession *timeflip.Session`: current open session, if any.
    - `DemoState.Authorized bool`: user-visible flag set after successful authorization and cleared when session closes.
    - `DemoState.ActiveStreamCancel context.CancelFunc`: stop function for an active event stream.
@@ -215,7 +222,9 @@ Session "1" --> "0..N" Event : streams
    - `func NewDemoApp(client *timeflip.Client, cfg DemoConfig, in InputPrompter, out OutputFormatter) *DemoApp`
    - `func (a *DemoApp) Run(ctx context.Context) error`
    - `func (a *DemoApp) Execute(ctx context.Context, line string) (keepRunning bool)`
+   - `func (s *DemoState) RememberDevices(devices []timeflip.DiscoveredDevice)`
    - `func (s *DemoState) SetSelectedDevice(id timeflip.DeviceID)`
+   - `func (s *DemoState) DeviceName(id timeflip.DeviceID) string`
    - `func (s *DemoState) SetSession(session *timeflip.Session)`
    - `func (s *DemoState) ClearSession()`
    - `func (a *DemoApp) commandOptions() timeflip.CommandOptions`
@@ -224,6 +233,7 @@ Session "1" --> "0..N" Event : streams
    - Close any active session on `exit` or context cancellation.
    - Cancel any active event stream before closing the active session.
    - Keep selected device ID after session close unless the user clears or changes it.
+   - Keep advertised names only in process-local demo state so v3 `read info` can pass the BLE broadcast name to the library session without introducing persistent storage.
    - Do not write selected device ID, password, or state to files or package globals.
 5. Constraints:
    - No persistent storage.
@@ -267,6 +277,7 @@ Session "1" --> "0..N" Event : streams
 3. Logic:
    - `list` calls `client.ListDevices(ctx, timeflip.ScanFilter{IncludeUnsupported: cfg.IncludeUnsupportedDevices})`.
    - Display ID, name, RSSI, supported flag, and any metadata.
+   - Remember each listed device's advertised/broadcast name in process-local state for later `connect`.
    - If one supported device is found and no selected device exists, offer to select it.
    - `select` requires a non-empty device ID and updates process-local state.
    - `status` prints current selected device, session open/closed, authorized flag, active stream state, and timeout settings.
@@ -328,6 +339,8 @@ Session "1" --> "0..N" Event : streams
    - `func runClose(ctx context.Context, app *DemoApp, args []string) error`
 3. Logic:
    - `connect` resolves a device ID, closes any existing active session after confirmation when needed, then calls `client.Connect`.
+   - `connect` passes `ConnectRequest.AdvertisedName` from process-local discovery state when a broadcast name is known, so v3 `read info` has a fallback device name even though the documented v3 BLE protocol does not expose it as a readable characteristic.
+   - After a device name change, later v3 `read info` must rely on the latest BLE advertised name observed by the library rather than assuming the `write name` input is the readable device name.
    - `authorize` requires an active session, prompts for password, uses the factory default `000000` when the input is blank, calls `session.Authorize`, and marks state authorized on success.
    - `close` stops active stream, closes the active session, clears authorization state, and prints closure status.
    - After connect, suggest `authorize`.
@@ -344,6 +357,7 @@ Session "1" --> "0..N" Event : streams
    - `read info`
    - `read battery`
    - `read system`
+   - `read status`
    - `read history [start-event|last|latest] [--all]`
    - `read task FACET`
    - `read tap`
@@ -355,11 +369,13 @@ Session "1" --> "0..N" Event : streams
      - `ReadDeviceInfo`
      - `ReadBattery`
      - `ReadSystemState`
+     - `ReadTrackerStatus`
      - `ReadHistory`
      - `ReadTaskParameters`
      - `ReadTapSettings`
    - Use `timeflip.CommandOptions{Timeout: cfg.CommandTimeout}` for command-backed reads.
    - Print labeled fields and raw bytes only where the type already exposes useful diagnostics and the display remains readable.
+   - Display `read status` as current lock, pause, auto-pause configuration, and current facet when available; this is the way to inspect current paused/unpaused state because pause state is not guaranteed to arrive as a streaming event.
    - Display `read system` sync reasons and practical trigger commands where the protocol maps a status code to a writable setting, for example `write task FACET MODE POMODORO_SECONDS` for task-parameter sync and `write autopause MINUTES` for auto-pause sync.
    - Display Device Information `system_id` as hex-code text such as `0x517D517D`, not decoded ASCII.
    - Command-backed read protocol errors should show the operation, command code when available, expected payload shape, byte count, and raw payload bytes rather than describing them as write-command acknowledgement failures.
@@ -489,6 +505,7 @@ Session "1" --> "0..N" Event : streams
 3. Content:
    - Add a demo section with `go run ./cmd/timeflip-demo`.
    - Document startup flags and interactive commands.
+   - Document that `-trace-ble PATH` captures raw BLE payloads and can include password bytes.
    - Describe a recommended smoke-test journey: list, select, pair, connect, authorize, read info, read battery, stream, stop, close, unpair.
    - State that the current `macos.Transport` may report unsupported scan/connect behavior until a concrete CoreBluetooth-backed adapter is implemented.
    - Reiterate that the demo displays technical device events and does not interpret tasks or time tracking.

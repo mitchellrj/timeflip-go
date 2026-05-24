@@ -14,7 +14,19 @@ func normalizeConfig(config Config) (Config, error) {
 	if config.CommunicationTimeout == 0 {
 		config.CommunicationTimeout = defaultCommunicationTimeout
 	}
+	if !validProtocolVersion(config.ProtocolVersion) {
+		return Config{}, &OperationError{Operation: "configure", Err: ErrInvalidInput}
+	}
 	return config, nil
+}
+
+func validProtocolVersion(version ProtocolVersion) bool {
+	switch version {
+	case ProtocolAuto, ProtocolV3, ProtocolV4:
+		return true
+	default:
+		return false
+	}
 }
 
 func timeoutFrom(ctx context.Context, base time.Duration, override time.Duration) (context.Context, context.CancelFunc) {

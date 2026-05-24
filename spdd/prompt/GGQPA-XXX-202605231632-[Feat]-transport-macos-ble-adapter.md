@@ -193,6 +193,9 @@ MacOSConnection --> OperationError : wraps GATT failures
      - Convert backend address/name/RSSI/service/manufacturer fields into `timeflip.Peripheral`.
      - Store the scan result by `DeviceID`.
      - Return a defensive, platform-neutral value.
+   - `func (t *Transport) AdvertisedName(ctx context.Context, id timeflip.DeviceID) (string, bool)`
+     - Return the latest advertised/local name for the device by trying a fresh scan when possible.
+     - Fall back to the active-process discovered scan result when macOS cannot rediscover a connected peripheral during a fresh scan.
 4. Completion Criteria:
    - State is scoped to the `Transport` instance and does not persist across process restarts.
    - Concurrent calls cannot corrupt the discovered map.
@@ -225,11 +228,13 @@ MacOSConnection --> OperationError : wraps GATT failures
    - Look up the selected device in the discovered map.
    - If the device is not known, run a short targeted scan within the provided context to find a peripheral whose backend address or local name maps to the requested ID.
    - Connect to the backend peripheral.
+   - Do not reject an explicit connect request solely because scan-time support heuristics fail; renamed TimeFlip devices may advertise a custom name and no service UUID.
+   - Use GATT discovery of the required TimeFlip2 service and characteristics as the authoritative support check.
    - Discover the TimeFlip2 service, generic access service, device information service, and battery service where available.
    - Discover and index every characteristic returned by `timeflip.RequiredCharacteristics()` plus standard characteristics used by `ReadDeviceInfo` and `ReadBattery`.
    - Return a `macos.Connection` with a populated characteristic index.
 3. Error Handling:
-   - Missing known device: `OperationError{Operation: "macos_connect", DeviceID: id, Err: timeflip.ErrUnsupportedDevice}` only when the scan finds a peripheral but it is not supported; otherwise use a contextual not-found backend error.
+   - Missing known device: use a contextual not-found backend error.
    - Missing required TimeFlip2 service or characteristic: `OperationError{Operation: "macos_connect", DeviceID: id, Err: timeflip.ErrProtocol}`.
    - Context deadline: wrap as `ErrTimeout`.
 4. Completion Criteria:

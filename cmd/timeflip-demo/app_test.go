@@ -11,18 +11,55 @@ import (
 	"time"
 
 	timeflip "github.com/mitchellrj/timeflip-go"
+	"github.com/mitchellrj/timeflip-go/internal/protocol"
 )
 
 func TestParseFlags(t *testing.T) {
-	cfg, err := parseFlags([]string{"-timeout", "3s", "-command-timeout", "2s", "-event-buffer", "4", "-include-raw", "-include-unsupported", "-no-color"})
+	cfg, err := parseFlags([]string{"-timeout", "3s", "-command-timeout", "2s", "-event-buffer", "4", "-include-raw", "-include-unsupported", "-no-color", "-trace-ble", "trace.log"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.CommunicationTimeout != 3*time.Second || cfg.CommandTimeout != 2*time.Second || cfg.EventBuffer != 4 || !cfg.IncludeRawEvents || !cfg.IncludeUnsupportedDevices || !cfg.NoColor {
+	if cfg.CommunicationTimeout != 3*time.Second || cfg.CommandTimeout != 2*time.Second || cfg.EventBuffer != 4 || !cfg.IncludeRawEvents || !cfg.IncludeUnsupportedDevices || !cfg.NoColor || cfg.TraceBLEPath != "trace.log" {
 		t.Fatalf("unexpected config: %+v", cfg)
 	}
 	if _, err := parseFlags([]string{"-event-buffer", "-1"}); err == nil {
 		t.Fatal("expected invalid event buffer")
+	}
+}
+
+func TestTracingTransportLogsRawOperations(t *testing.T) {
+	conn := &fakeDemoConnection{readPayload: []byte{0x01}}
+	var trace bytes.Buffer
+	transport := NewTracingTransport(&fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}}, &trace)
+	wrapped, err := transport.Connect(context.Background(), "tf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := wrapped.Write(context.Background(), "char-write", []byte("000000")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wrapped.Read(context.Background(), "char-read"); err != nil {
+		t.Fatal(err)
+	}
+	notifications, err := wrapped.Subscribe(context.Background(), "char-notify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.subscriptions[0] <- timeflip.Notification{Characteristic: "char-notify", Payload: []byte{0xAA, 0x01}}
+	got := <-notifications
+	if got.Characteristic != "char-notify" {
+		t.Fatalf("unexpected notification: %+v", got)
+	}
+	output := trace.String()
+	for _, want := range []string{
+		"event=connect device=tf",
+		"event=write device=tf characteristic=char-write bytes=6 hex=0x303030303030",
+		"event=read_result device=tf characteristic=char-read bytes=1 hex=0x01",
+		"event=notify device=tf characteristic=char-notify bytes=2 hex=0xAA01",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("trace missing %q in %q", want, output)
+		}
 	}
 }
 
@@ -128,11 +165,107 @@ func TestListCanSelectSingleSupportedDevice(t *testing.T) {
 	}
 }
 
+func TestReadInfoUsesBroadcastNameForV3Device(t *testing.T) {
+	conn := &fakeDemoConnection{
+		reads: map[timeflip.CharacteristicID][]byte{
+			protocol.FirmwareRevisionString: []byte("TFv3.1"),
+		},
+		readErrs: map[timeflip.CharacteristicID]error{
+			protocol.DeviceNameCharacteristic: timeflip.ErrProtocol,
+			protocol.ManufacturerNameString:   timeflip.ErrProtocol,
+			protocol.ModelNumberString:        timeflip.ErrProtocol,
+			protocol.HardwareRevisionString:   timeflip.ErrProtocol,
+			protocol.SystemID:                 timeflip.ErrProtocol,
+		},
+	}
+	transport := &fakeDemoTransport{
+		peripherals: []timeflip.Peripheral{
+			{ID: "tf", Name: "TimeFlip Broadcast", RSSI: -42, AdvertisedServices: []timeflip.ServiceID{timeflip.TimeFlipService}},
+		},
+		connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn},
+	}
+	app, input, out, errOut := newTestApp(t, transport)
+	input.answers = []string{"y"}
+	app.Execute(context.Background(), "list")
+	app.Execute(context.Background(), "connect")
+	out.Reset()
+	app.Execute(context.Background(), "read info")
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected error: %q", errOut.String())
+	}
+	output := out.String()
+	if !strings.Contains(output, "name: TimeFlip Broadcast") || !strings.Contains(output, "firmware: TFv3.1") {
+		t.Fatalf("missing v3 advertised name info: %q", output)
+	}
+}
+
+func TestReadInfoUsesUpdatedBroadcastNameAfterRename(t *testing.T) {
+	conn := &fakeDemoConnection{
+		reads: map[timeflip.CharacteristicID][]byte{
+			protocol.Command:                {0x15, 0x02},
+			protocol.FirmwareRevisionString: []byte("TFv3.1"),
+		},
+		readErrs: map[timeflip.CharacteristicID]error{
+			protocol.DeviceNameCharacteristic: timeflip.ErrProtocol,
+			protocol.ManufacturerNameString:   timeflip.ErrProtocol,
+			protocol.ModelNumberString:        timeflip.ErrProtocol,
+			protocol.HardwareRevisionString:   timeflip.ErrProtocol,
+			protocol.SystemID:                 timeflip.ErrProtocol,
+		},
+	}
+	transport := &fakeDemoTransport{
+		peripherals: []timeflip.Peripheral{
+			{ID: "tf", Name: "Old Broadcast", RSSI: -42, AdvertisedServices: []timeflip.ServiceID{timeflip.TimeFlipService}},
+		},
+		connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn},
+	}
+	app, input, out, errOut := newTestApp(t, transport)
+	input.answers = []string{"y"}
+	app.Execute(context.Background(), "list")
+	app.Execute(context.Background(), "connect")
+	app.Execute(context.Background(), `write name "New Broadcast"`)
+	transport.peripherals[0].Name = "New Broadcast"
+	out.Reset()
+	app.Execute(context.Background(), "read info")
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected error: %q", errOut.String())
+	}
+	if output := out.String(); !strings.Contains(output, "name: New Broadcast") {
+		t.Fatalf("missing updated advertised name: %q", output)
+	}
+}
+
+func TestListUnsupportedDevicesSuggestsExplicitConnectWhenIncluded(t *testing.T) {
+	transport := &fakeDemoTransport{peripherals: []timeflip.Peripheral{
+		{ID: "renamed", Name: "test", RSSI: -62, Metadata: map[string]string{"address": "renamed"}},
+	}}
+	app, _, out, _ := newTestApp(t, transport)
+	app.cfg.IncludeUnsupportedDevices = true
+	app.Execute(context.Background(), "list")
+	output := out.String()
+	if !strings.Contains(output, "renamed") || !strings.Contains(output, "false") {
+		t.Fatalf("missing unsupported device output: %q", output)
+	}
+	if !strings.Contains(output, "connect DEVICE_ID") || !strings.Contains(output, "select DEVICE_ID") {
+		t.Fatalf("missing unsupported-device suggestions: %q", output)
+	}
+}
+
 func TestSelectSuggestsPairAndConnect(t *testing.T) {
 	app, _, out, _ := newTestApp(t, &fakeDemoTransport{})
 	app.Execute(context.Background(), "select tf")
 	if !strings.Contains(out.String(), "next:") || !strings.Contains(out.String(), "pair tf") || !strings.Contains(out.String(), "connect tf") {
 		t.Fatalf("missing select suggestions: %q", out.String())
+	}
+}
+
+func TestSelectingUnknownDeviceClearsBroadcastName(t *testing.T) {
+	var state DemoState
+	state.RememberDevices([]timeflip.DiscoveredDevice{{ID: "tf1", Name: "First Name"}})
+	state.SetSelectedDevice("tf1")
+	state.SetSelectedDevice("tf2")
+	if got := state.DeviceName("tf2"); got != "" {
+		t.Fatalf("unexpected carried-over device name: %q", got)
 	}
 }
 
@@ -237,6 +370,28 @@ func TestReadAndWriteValidation(t *testing.T) {
 	app.Execute(context.Background(), "write led 0 2")
 	if !strings.Contains(errOut.String(), "invalid input") {
 		t.Fatalf("missing library validation error: %q", errOut.String())
+	}
+}
+
+func TestReadStatusShowsPauseState(t *testing.T) {
+	conn := &fakeDemoConnection{reads: map[timeflip.CharacteristicID][]byte{
+		protocol.Command:             {0x10, 0x02},
+		protocol.CommandResultOutput: {0x02, 0x01, 0x00, 0x0F},
+		protocol.Facets:              {0x08},
+	}}
+	app, _, out, errOut := newTestApp(t, &fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}})
+	app.Execute(context.Background(), "select tf")
+	app.Execute(context.Background(), "connect")
+	out.Reset()
+	app.Execute(context.Background(), "read status")
+	if errOut.Len() != 0 {
+		t.Fatalf("unexpected error: %q", errOut.String())
+	}
+	output := out.String()
+	for _, want := range []string{"lock: false", "pause: true", "autopause_minutes: 15", "current_facet: 8"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("read status missing %q in %q", want, output)
+		}
 	}
 }
 
@@ -348,6 +503,8 @@ type fakeDemoConnection struct {
 	writes        []fakeDemoWrite
 	closed        bool
 	readPayload   []byte
+	reads         map[timeflip.CharacteristicID][]byte
+	readErrs      map[timeflip.CharacteristicID]error
 }
 
 type fakeDemoWrite struct {
@@ -355,7 +512,13 @@ type fakeDemoWrite struct {
 	payload        []byte
 }
 
-func (f *fakeDemoConnection) Read(context.Context, timeflip.CharacteristicID) ([]byte, error) {
+func (f *fakeDemoConnection) Read(_ context.Context, ch timeflip.CharacteristicID) ([]byte, error) {
+	if err := f.readErrs[ch]; err != nil {
+		return nil, err
+	}
+	if payload, ok := f.reads[ch]; ok {
+		return append([]byte(nil), payload...), nil
+	}
 	if f.readPayload != nil {
 		return append([]byte(nil), f.readPayload...), nil
 	}

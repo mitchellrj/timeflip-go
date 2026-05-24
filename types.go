@@ -24,9 +24,22 @@ type FacetID uint8
 // DefaultPassword is the factory TimeFlip2 password, encoded as ASCII bytes.
 const DefaultPassword = "000000"
 
+// ProtocolVersion selects which TimeFlip protocol family to use.
+type ProtocolVersion string
+
+const (
+	// ProtocolAuto lets operations prefer v4 behavior and fall back where practical.
+	ProtocolAuto ProtocolVersion = ""
+	// ProtocolV3 selects the v3-style protocol documented by BLE_device_commutication_protocol_v3.0_en.md.
+	ProtocolV3 ProtocolVersion = "v3"
+	// ProtocolV4 selects the v4-style TimeFlip2 protocol documented by TimeFlip BLE protocol ver4.
+	ProtocolV4 ProtocolVersion = "v4"
+)
+
 // Config configures a Client.
 type Config struct {
 	CommunicationTimeout time.Duration
+	ProtocolVersion      ProtocolVersion
 }
 
 // CommandOptions provides per-command behavior.
@@ -128,8 +141,10 @@ type UnpairRequest struct {
 
 // ConnectRequest opens a connection to a TimeFlip2 device.
 type ConnectRequest struct {
-	DeviceID DeviceID
-	Timeout  time.Duration
+	DeviceID        DeviceID
+	AdvertisedName  string
+	Timeout         time.Duration
+	ProtocolVersion ProtocolVersion
 }
 
 // PairingStage identifies a pairing workflow stage.
@@ -196,6 +211,7 @@ type DeviceInfo struct {
 	HardwareRevision string
 	FirmwareRevision string
 	SystemID         string
+	ProtocolVersion  ProtocolVersion
 	Raw              map[CharacteristicID][]byte
 }
 
@@ -220,10 +236,14 @@ type SystemState struct {
 
 // TrackerStatus describes lock, pause, and auto-pause state.
 type TrackerStatus struct {
-	LockEnabled      bool
-	PauseEnabled     bool
-	AutoPauseMinutes uint16
-	Raw              []byte
+	LockEnabled           bool
+	PauseEnabled          bool
+	AutoPauseMinutes      uint16
+	CurrentFacetKnown     bool
+	CurrentFacet          FacetID
+	CurrentFacetUndefined bool
+	FacetRaw              []byte
+	Raw                   []byte
 }
 
 // CommandStatus is a command acknowledgement.

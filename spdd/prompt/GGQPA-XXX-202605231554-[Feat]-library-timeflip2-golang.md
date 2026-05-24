@@ -128,7 +128,7 @@ Transport "1" --> "0..N" Connection : creates
 
 2. Transport and Protocol Boundaries:
    - Define a small BLE `Transport` interface and `Connection` interface in an internal or platform package so MacOS support can be added first without binding the whole library to one BLE implementation.
-   - Implement TimeFlip2 protocol constants and parsing in a dedicated protocol package, including service UUIDs, characteristic UUIDs, command encoding, command-result decoding, password authorization, facet/double-tap/system-state/history parsing, and error mapping.
+   - Implement TimeFlip2 protocol constants and parsing in a dedicated protocol package, including service UUIDs, characteristic UUIDs, command encoding, command-result decoding, password authorization, facet/double-tap/system-state/history parsing, protocol-version handling, and error mapping.
    - Keep protocol byte details out of the primary API while preserving diagnostic information inside typed errors and command results.
 
 3. Pairing, Unpairing, and Statelessness:
@@ -414,36 +414,45 @@ Transport "1" --> "0..N" Connection : creates
 3. Logic:
    - Validate device ID.
    - Apply communication timeout to connection.
-   - Create a session with device ID, connection, default timeout, and protocol adapter.
+   - Create a session with device ID, optional advertised/broadcast name from `ConnectRequest.AdvertisedName`, connection, default timeout, and protocol adapter.
    - Write the supplied six-byte password to password characteristic during authorization; if the supplied password is empty, write the factory default password `000000`.
    - Read command result or protected characteristic to verify authorization when possible.
-   - For password-check results, treat first byte `0x01` as authorized and first byte `0x02` as wrong password.
-   - Because the command result characteristic can briefly contain a stale previous password-check result, poll briefly after an observed `0x02` before returning authorization failure.
+   - For password-check results, use the observed device behavior where first byte `0x02` means authorized and first byte `0x01` means wrong password, matching command acknowledgement semantics even though some protocol documentation states the opposite.
+   - Because the command result characteristic can briefly contain a stale previous password-check result, poll briefly after an observed `0x01` before returning authorization failure.
    - Close subscriptions and connection on `Close`.
 4. Constraints:
    - Session may keep active connection configuration and subscription handles only while open.
    - Session must not write to files, global maps, or package-level caches.
    - Close must be idempotent.
 
-### Implement Read APIs - Device Info, Battery, System State, History
+### Implement Read APIs - Device Info, Battery, Tracker Status, System State, History
 
 1. Responsibility: Read available stored data and configuration from a connected device.
 2. Methods:
    - `func (s *Session) ReadDeviceInfo(ctx context.Context) (DeviceInfo, error)`
    - `func (s *Session) ReadBattery(ctx context.Context) (BatteryStatus, error)`
+   - `func (s *Session) ReadTrackerStatus(ctx context.Context, opts CommandOptions) (TrackerStatus, error)`
    - `func (s *Session) ReadSystemState(ctx context.Context) (SystemState, error)`
    - `func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error)`
    - `func (s *Session) ReadTaskParameters(ctx context.Context, facet FacetID, opts CommandOptions) (TaskParameters, error)`
    - `func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (TapSettings, error)`
 3. Logic:
    - Use characteristic reads for simple readable values.
+   - `ReadTrackerStatus` must use command `0x10`, read acknowledgement from `0x6f54`, then read command output from `0x6f53` as lock, pause, and auto-pause bytes. It should also read the current facet from the facet characteristic when available. This is the current pause/unpause state; it is not emitted as a continuous stream event.
+   - Treat the local `docs/Hardware` files as two firmware/protocol families: the v3-style protocol uses `0x6f53` for command output/history packages and has no v4 `0x6f58` history characteristic; the v4-style protocol adds TimeFlip events, system state, and history data characteristic `0x6f58`.
+   - Protocol version can be configured explicitly. Automatic mode should use firmware guidance from practical implementations where `FW_v3.47` and newer use the v4-style behavior, while older firmware uses v3-style behavior; where firmware cannot be read, prefer v4 behavior where available and fall back to v3 behavior when v4-only characteristics are unavailable.
+   - `ReadSystemState` is v4-only because v3 uses `0x6f56` as calibration version rather than system-state notifications.
    - `ReadDeviceInfo` must treat individual standard Device Information characteristics as optional: return any fields that can be read, leave unavailable fields blank, and fail only when no Device Information characteristics can be read or a non-optional transport/cancellation error occurs.
+   - For protocol v3, device name is not exposed through the documented readable BLE characteristics. `ReadDeviceInfo` must refresh the current advertised/broadcast name through transport-supported advertised-name lookup or BLE discovery when available, falling back to the name supplied to the active session by the caller, such as from `ListDevices`, rather than relying on Generic Access Device Name `0x2A00`. This keeps reads after `SetName` aligned with the latest broadcast name instead of the command input.
+   - If the Device Name characteristic is unavailable and the protocol has not yet been classified as v3, `ReadDeviceInfo` may still use the advertised/broadcast name as a fallback so CLI reads do not show an empty system name for devices that omit `0x2A00`.
    - `ReadDeviceInfo` must format System ID as uppercase hex code text such as `0x517D517D`, not decoded ASCII, while preserving the raw bytes in diagnostics.
-   - Use command plus command-result/history characteristic for command-backed reads.
-   - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the command-result payload as data, not as the two-byte write acknowledgement format used by configuration writes.
-   - Command-backed reads and writes must ignore stale command-result payloads whose first byte does not match the requested command code, waiting until timeout for a matching command-result payload, except for known special read responses.
+   - Use command characteristic `0x6f54` for command writes and acknowledgement reads, then use command-result output characteristic `0x6f53` only for command output payloads.
+   - Command acknowledgement is read from `0x6f54` as a NUL-terminated value. Trim at the first NUL byte, then use at most the first four acknowledgement bytes and ignore any remaining bytes. The acknowledgement begins as `0xXXYY`, where `XX` is the command and `YY` is `0x02` for executed or `0x01` for error.
+   - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the `0x6f53` command-result output payload as data, not as the two-byte write acknowledgement format.
+   - Command-backed reads must ignore stale `0x6f53` output payloads whose first byte does not match the requested command code, waiting until timeout for a matching command output payload, except for known special read responses.
    - For task-parameter and tap-settings reads, command-result payload `0x1900` must be returned as an unassigned/unconfigured state based on observed Android app behavior, with raw bytes preserved.
-   - History decoding must accept documented v4 single-history records of 17 bytes and full-history stream packets of 20 bytes.
+   - Protocol v3 history output must decode 21-byte packages from `0x6f53` as seven 3-byte bit-packed blocks matching the Python implementation: facet is the high six bits of the third byte, and duration is the remaining 18 bits interpreted with TimeFlip big-endian ordering. A package of all zeros terminates the stream.
+   - Protocol v4 history output must decode 17-byte single records or 20-byte stream packets from `0x6f58` using the v4 history format documented locally.
    - Protocol errors from read payload decoding must include the expected payload shape, byte count, and raw bytes where available.
    - Apply global timeout or command override.
    - Return typed state and raw diagnostic bytes where appropriate.
@@ -471,9 +480,10 @@ Transport "1" --> "0..N" Connection : creates
 3. Logic:
    - Validate ranges and payload sizes before writing.
    - Write encoded command to command characteristic.
-   - Read command result output or command status as documented.
+   - Read command acknowledgement/status from command characteristic `0x6f54`, not command-result output characteristic `0x6f53`.
+   - Read command-result output from `0x6f53` only when the command is expected to produce output data.
    - Return `ErrCommandRejected` when device reports command error.
-   - Preserve raw command-result payload bytes in `CommandResult.Payload` and `CommandResult.Status.Raw` even when the acknowledgement status byte is malformed and `ErrProtocol` is returned.
+   - Preserve the NUL-trimmed first four raw command-characteristic acknowledgement bytes in `CommandResult.Payload` and `CommandResult.Status.Raw` even when the acknowledgement status byte is malformed and `ErrProtocol` is returned; ignore trailing bytes.
 4. Constraints:
    - Do not implement firmware update or firmware-loader command as a public supported command.
    - Do not classify operations by sensitivity; all caller-accessible operations follow the same validation and result pattern.

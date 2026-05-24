@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -34,6 +35,7 @@ const (
 )
 
 const (
+	cmdHistoryRead    CommandCode = CommandCode(protocol.CommandHistoryRead)
 	cmdLock           CommandCode = CommandCode(protocol.CommandLock)
 	cmdAutoPause      CommandCode = CommandCode(protocol.CommandAutoPause)
 	cmdPause          CommandCode = CommandCode(protocol.CommandPause)
@@ -85,12 +87,26 @@ func encodeCommand(cmd Command) ([]byte, error) {
 }
 
 func decodeCommandStatus(payload []byte) (CommandStatus, error) {
-	code, ok, err := protocol.DecodeCommandStatus(payload)
-	status := CommandStatus{Code: CommandCode(code), OK: ok, Raw: append([]byte(nil), payload...)}
+	ack := commandAcknowledgementBytes(payload)
+	code, ok, err := protocol.DecodeCommandStatus(ack)
+	status := CommandStatus{Code: CommandCode(code), OK: ok, Raw: append([]byte(nil), ack...)}
 	if err != nil {
-		return status, newProtocolPayloadError("command result status 0x02 (OK) or 0x01 (rejected)", payload)
+		return status, newProtocolPayloadError("command acknowledgement status 0x02 (OK) or 0x01 (rejected)", ack)
 	}
 	return status, nil
+}
+
+func commandAcknowledgementBytes(payload []byte) []byte {
+	for i, b := range payload {
+		if b == 0x00 {
+			payload = payload[:i]
+			break
+		}
+	}
+	if len(payload) <= 4 {
+		return payload
+	}
+	return payload[:4]
 }
 
 func decodeTrackerStatus(payload []byte) (TrackerStatus, error) {
@@ -212,6 +228,26 @@ func decodeHistory(payload []byte) ([]HistoryEntry, HistoryStreamState, error) {
 	return entries, HistoryStreamState{Complete: complete, PreviousEventNumber: previous}, nil
 }
 
+func decodeHistoryV3(payload []byte) ([]HistoryEntry, HistoryStreamState, error) {
+	rawEntries, complete, err := protocol.DecodeHistoryPacketV3(payload)
+	if err != nil {
+		return nil, HistoryStreamState{}, ErrProtocol
+	}
+	entries := make([]HistoryEntry, 0, len(rawEntries))
+	for _, raw := range rawEntries {
+		entry := HistoryEntry{
+			Facet:              FacetID(raw.Side),
+			UndefinedFacet:     raw.Side == 0,
+			AccelerometerError: raw.Side == 66,
+			Pause:              raw.Side == 63,
+			DurationSeconds:    raw.DurationSeconds,
+			Raw:                append([]byte(nil), raw.Raw...),
+		}
+		entries = append(entries, entry)
+	}
+	return entries, HistoryStreamState{Complete: complete}, nil
+}
+
 func decodeDeviceInfo(values map[CharacteristicID][]byte) DeviceInfo {
 	raw := make(map[CharacteristicID][]byte, len(values))
 	for k, v := range values {
@@ -224,8 +260,50 @@ func decodeDeviceInfo(values map[CharacteristicID][]byte) DeviceInfo {
 		HardwareRevision: cleanString(values[charHardwareRevision]),
 		FirmwareRevision: cleanString(values[charFirmwareRevision]),
 		SystemID:         hexCode(values[charSystemID]),
+		ProtocolVersion:  inferProtocolVersion(cleanString(values[charFirmwareRevision])),
 		Raw:              raw,
 	}
+}
+
+func inferProtocolVersion(firmware string) ProtocolVersion {
+	normalized := strings.ToLower(firmware)
+	if strings.Contains(normalized, "tfv4") || strings.Contains(normalized, "fw_v4") {
+		return ProtocolV4
+	}
+	if version, ok := parseFirmwareNumber(normalized); ok {
+		if version >= 3.47 {
+			return ProtocolV4
+		}
+		return ProtocolV3
+	}
+	if strings.Contains(normalized, "tfv3") || strings.Contains(normalized, "fw_v3") {
+		return ProtocolV3
+	}
+	return ProtocolAuto
+}
+
+func parseFirmwareNumber(firmware string) (float64, bool) {
+	for _, marker := range []string{"fw_v", "tfv"} {
+		idx := strings.Index(firmware, marker)
+		if idx < 0 {
+			continue
+		}
+		start := idx + len(marker)
+		end := start
+		for end < len(firmware) {
+			ch := firmware[end]
+			if (ch < '0' || ch > '9') && ch != '.' {
+				break
+			}
+			end++
+		}
+		if end == start {
+			continue
+		}
+		version, err := strconv.ParseFloat(firmware[start:end], 64)
+		return version, err == nil
+	}
+	return 0, false
 }
 
 func hexCode(b []byte) string {

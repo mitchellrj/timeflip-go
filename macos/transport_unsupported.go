@@ -22,6 +22,11 @@ func (t *Transport) Scan(context.Context, timeflip.ScanFilter) ([]timeflip.Perip
 	return nil, &timeflip.OperationError{Operation: "macos_scan", Err: timeflip.ErrUnsupportedOperation}
 }
 
+// AdvertisedName reports that advertised-name lookup is unsupported on this platform.
+func (t *Transport) AdvertisedName(context.Context, timeflip.DeviceID) (string, bool) {
+	return "", false
+}
+
 // Connect reports that the MacOS BLE adapter is unsupported on this platform.
 func (t *Transport) Connect(context.Context, timeflip.DeviceID) (timeflip.Connection, error) {
 	return nil, &timeflip.OperationError{Operation: "macos_connect", Err: timeflip.ErrUnsupportedOperation}

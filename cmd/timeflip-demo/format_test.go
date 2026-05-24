@@ -199,6 +199,29 @@ func TestFormatterPrintsCommandProtocolErrorGuidance(t *testing.T) {
 	}
 }
 
+func TestFormatterPrintsCommandAuthorizationGuidance(t *testing.T) {
+	errOut := &bytes.Buffer{}
+	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)
+	formatter.PrintError(&timeflip.OperationError{
+		Operation: "send_command",
+		DeviceID:  "tf",
+		Command:   timeflip.CommandCode(0x15),
+		Err:       timeflip.ErrAuthorizationFailed,
+	})
+	output := errOut.String()
+	for _, want := range []string{
+		"authorization error:",
+		"device is not accepting commands",
+		"password check failed (0x01)",
+		"run authorize",
+		"000000",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("authorization guidance missing %q in %q", want, output)
+		}
+	}
+}
+
 func TestFormatterExplainsMissingCommandBackedReadResponse(t *testing.T) {
 	errOut := &bytes.Buffer{}
 	formatter := NewTextFormatter(&bytes.Buffer{}, errOut)

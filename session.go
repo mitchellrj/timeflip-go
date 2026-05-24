@@ -13,11 +13,14 @@ import (
 
 // Session manages one active TimeFlip2 connection.
 type Session struct {
-	deviceID       DeviceID
-	conn           Connection
-	defaultTimeout time.Duration
-	closeOnce      sync.Once
-	done           chan struct{}
+	deviceID             DeviceID
+	advertisedName       string
+	advertisedNameReader func(context.Context) (string, bool)
+	conn                 Connection
+	defaultTimeout       time.Duration
+	protocol             ProtocolVersion
+	closeOnce            sync.Once
+	done                 chan struct{}
 }
 
 const (
@@ -65,9 +68,9 @@ func (s *Session) readAuthorizationResult(ctx context.Context) (AuthorizationRes
 			return AuthorizationResult{Authorized: true}, nil
 		}
 		switch payload[0] {
-		case 0x01:
-			return AuthorizationResult{Authorized: true}, nil
 		case 0x02:
+			return AuthorizationResult{Authorized: true}, nil
+		case 0x01:
 			wrongPayload = append(wrongPayload[:0], payload...)
 		default:
 			return AuthorizationResult{Authorized: true}, nil
@@ -83,11 +86,27 @@ func (s *Session) readAuthorizationResult(ctx context.Context) (AuthorizationRes
 			return AuthorizationResult{}, &OperationError{
 				Operation: "authorize",
 				DeviceID:  s.deviceID,
-				Err:       fmt.Errorf("%w: password check returned 0x02; raw=0x%X", ErrAuthorizationFailed, wrongPayload),
+				Err:       fmt.Errorf("%w: password check returned 0x01; raw=0x%X", ErrAuthorizationFailed, wrongPayload),
 			}
 		case <-timer.C:
 		}
 	}
+}
+
+func (s *Session) verifyUsable(ctx context.Context) error {
+	if s.protocol != ProtocolV3 {
+		if _, err := s.ReadSystemState(ctx); err == nil {
+			return nil
+		} else if s.protocol == ProtocolV4 {
+			return err
+		}
+	}
+	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
+	defer cancel()
+	if _, err := s.conn.Read(ctx, charFacets); err != nil {
+		return wrapContextErr("verify", s.deviceID, string(PairingStageVerify), 0, err)
+	}
+	return nil
 }
 
 // Close closes the session connection.
@@ -106,7 +125,11 @@ func (s *Session) ReadDeviceInfo(ctx context.Context) (DeviceInfo, error) {
 	defer cancel()
 	values := map[CharacteristicID][]byte{}
 	var firstMissingErr error
-	for _, ch := range []CharacteristicID{charDeviceName, charManufacturerName, charModelNumber, charHardwareRevision, charFirmwareRevision, charSystemID} {
+	characteristics := []CharacteristicID{charManufacturerName, charModelNumber, charHardwareRevision, charFirmwareRevision, charSystemID}
+	if s.protocol != ProtocolV3 {
+		characteristics = append([]CharacteristicID{charDeviceName}, characteristics...)
+	}
+	for _, ch := range characteristics {
 		payload, err := s.conn.Read(ctx, ch)
 		if err != nil {
 			if errors.Is(err, ErrProtocol) {
@@ -125,7 +148,25 @@ func (s *Session) ReadDeviceInfo(ctx context.Context) (DeviceInfo, error) {
 		}
 		return DeviceInfo{}, &OperationError{Operation: "read_device_info", DeviceID: s.deviceID, Err: ErrProtocol}
 	}
-	return decodeDeviceInfo(values), nil
+	info := decodeDeviceInfo(values)
+	if s.protocol == ProtocolV3 || info.ProtocolVersion == ProtocolV3 || info.Name == "" {
+		if name := s.readAdvertisedName(ctx); name != "" {
+			info.Name = name
+		}
+	}
+	if s.protocol == ProtocolAuto && info.ProtocolVersion != ProtocolAuto {
+		s.protocol = info.ProtocolVersion
+	}
+	return info, nil
+}
+
+func (s *Session) readAdvertisedName(ctx context.Context) string {
+	if s.advertisedNameReader != nil {
+		if name, ok := s.advertisedNameReader(ctx); ok {
+			return name
+		}
+	}
+	return s.advertisedName
 }
 
 // ReadBattery reads current battery status.
@@ -145,6 +186,9 @@ func (s *Session) ReadBattery(ctx context.Context) (BatteryStatus, error) {
 
 // ReadSystemState reads current TimeFlip2 system state.
 func (s *Session) ReadSystemState(ctx context.Context) (SystemState, error) {
+	if s.protocol == ProtocolV3 {
+		return SystemState{}, &OperationError{Operation: "read_system_state", DeviceID: s.deviceID, Err: ErrUnsupportedOperation}
+	}
 	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
 	defer cancel()
 	payload, err := s.conn.Read(ctx, charSystemState)
@@ -158,8 +202,42 @@ func (s *Session) ReadSystemState(ctx context.Context) (SystemState, error) {
 	return state, nil
 }
 
+// ReadTrackerStatus reads lock, pause, and auto-pause state.
+func (s *Session) ReadTrackerStatus(ctx context.Context, opts CommandOptions) (TrackerStatus, error) {
+	payload, err := s.readCommandPayload(ctx, commandNoPayload(cmdStatus), opts, "read_tracker_status", isTrackerStatusPayload)
+	if err != nil {
+		return TrackerStatus{}, err
+	}
+	status, err := decodeTrackerStatus(payload)
+	if err != nil {
+		return TrackerStatus{}, &OperationError{Operation: "read_tracker_status", DeviceID: s.deviceID, Command: cmdStatus, Err: newProtocolPayloadError("tracker status response lock/pause/autopause bytes", payload)}
+	}
+	facetPayload, err := s.conn.Read(ctx, charFacets)
+	if err == nil {
+		facet, err := decodeFacet(facetPayload)
+		if err == nil {
+			status.CurrentFacetKnown = true
+			status.CurrentFacet = facet.Facet
+			status.CurrentFacetUndefined = facet.Undefined
+			status.FacetRaw = append([]byte(nil), facetPayload...)
+		}
+	}
+	return status, nil
+}
+
 // ReadHistory reads device history entries.
 func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error) {
+	if s.protocol == ProtocolV3 {
+		return s.readHistoryV3(ctx, req)
+	}
+	entries, err := s.readHistoryV4(ctx, req)
+	if err == nil || s.protocol == ProtocolV4 {
+		return entries, err
+	}
+	return s.readHistoryV3(ctx, req)
+}
+
+func (s *Session) readHistoryV4(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error) {
 	code := byte(0x01)
 	if req.All {
 		code = 0x02
@@ -181,6 +259,44 @@ func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]Histor
 		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: newProtocolPayloadError("17-byte single history record or 20-byte history stream packet from history data characteristic", raw)}
 	}
 	return entries, nil
+}
+
+func (s *Session) readHistoryV3(ctx context.Context, _ HistoryRequest) ([]HistoryEntry, error) {
+	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
+	defer cancel()
+	if err := s.conn.Write(ctx, charCommand, []byte{byte(cmdHistoryRead)}); err != nil {
+		return nil, wrapContextErr("read_history", s.deviceID, "", cmdHistoryRead, err)
+	}
+	status, err := s.readCommandStatusFor(ctx, cmdHistoryRead, "read_history")
+	if err != nil {
+		return nil, err
+	}
+	if !status.OK {
+		return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Command: cmdHistoryRead, Err: ErrCommandRejected}
+	}
+	var entries []HistoryEntry
+	var lastNonZero []byte
+	for {
+		raw, err := s.conn.Read(ctx, charCommandResult)
+		if err != nil {
+			return nil, wrapContextErr("read_history", s.deviceID, "", cmdHistoryRead, err)
+		}
+		decoded, stream, err := decodeHistoryV3(raw)
+		if err != nil {
+			return nil, &OperationError{Operation: "read_history", DeviceID: s.deviceID, Err: newProtocolPayloadError("21-byte v3 history package from command-result output characteristic", raw)}
+		}
+		if stream.Complete {
+			if len(lastNonZero) >= 2 {
+				count := int(binary.BigEndian.Uint16(lastNonZero[0:2]))
+				if count > 0 && count < len(entries) {
+					return entries[:count], nil
+				}
+			}
+			return entries, nil
+		}
+		lastNonZero = append(lastNonZero[:0], raw...)
+		entries = append(entries, decoded...)
+	}
 }
 
 // ReadTaskParameters reads task parameters for a facet.
@@ -231,7 +347,14 @@ func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts Comm
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return nil, wrapContextErr(operation, s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.readCommandResultFor(ctx, cmd.Code, operation, accept)
+	status, err := s.readCommandStatusFor(ctx, cmd.Code, operation)
+	if err != nil {
+		return nil, err
+	}
+	if !status.OK {
+		return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: cmd.Code, Err: ErrCommandRejected}
+	}
+	payload, err := s.readCommandOutputFor(ctx, cmd.Code, operation, accept)
 	if err != nil {
 		return nil, err
 	}
@@ -249,22 +372,43 @@ func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOpti
 	if err := s.conn.Write(ctx, charCommand, encoded); err != nil {
 		return CommandResult{}, wrapContextErr("send_command", s.deviceID, "", cmd.Code, err)
 	}
-	payload, err := s.readCommandResultFor(ctx, cmd.Code, "send_command", nil)
+	status, err := s.readCommandStatusFor(ctx, cmd.Code, "send_command")
 	if err != nil {
-		return CommandResult{}, err
+		return CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), status.Raw...)}, err
 	}
-	status, err := decodeCommandStatus(payload)
-	if err != nil {
-		return CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), payload...)}, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: err}
-	}
-	result := CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), payload...)}
+	result := CommandResult{Command: cmd, Status: status, Payload: append([]byte(nil), status.Raw...)}
 	if !status.OK {
 		return result, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: ErrCommandRejected}
 	}
 	return result, nil
 }
 
-func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, operation string, accept func([]byte) bool) ([]byte, error) {
+func (s *Session) readCommandStatusFor(ctx context.Context, code CommandCode, operation string) (CommandStatus, error) {
+	var last []byte
+	for {
+		payload, err := s.conn.Read(ctx, charCommand)
+		if err != nil {
+			return CommandStatus{}, wrapContextErr(operation, s.deviceID, "", code, err)
+		}
+		last = append(last[:0], payload...)
+		if len(payload) > 0 && CommandCode(payload[0]) == code {
+			status, err := decodeCommandStatus(payload)
+			if err != nil {
+				return CommandStatus{Code: code, Raw: append([]byte(nil), payload...)}, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: err}
+			}
+			return status, nil
+		}
+		timer := time.NewTimer(50 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return CommandStatus{Code: code, Raw: append([]byte(nil), last...)}, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command characteristic acknowledgement beginning with requested command byte", last)}
+		case <-timer.C:
+		}
+	}
+}
+
+func (s *Session) readCommandOutputFor(ctx context.Context, code CommandCode, operation string, accept func([]byte) bool) ([]byte, error) {
 	var last []byte
 	for {
 		payload, err := s.conn.Read(ctx, charCommandResult)
@@ -275,6 +419,14 @@ func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, op
 		if len(payload) > 0 && CommandCode(payload[0]) == code {
 			return append([]byte(nil), payload...), nil
 		}
+		if isPasswordWrongResult(payload) {
+			return nil, &OperationError{
+				Operation: operation,
+				DeviceID:  s.deviceID,
+				Command:   code,
+				Err:       fmt.Errorf("%w: command-result characteristic reports password check failed; authorize with the current password before sending commands", ErrAuthorizationFailed),
+			}
+		}
 		if accept != nil && accept(payload) {
 			return append([]byte(nil), payload...), nil
 		}
@@ -282,7 +434,7 @@ func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, op
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command result beginning with requested command byte", last)}
+			return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: code, Err: newProtocolPayloadError("command-result output beginning with requested command byte", last)}
 		case <-timer.C:
 		}
 	}
@@ -290,6 +442,15 @@ func (s *Session) readCommandResultFor(ctx context.Context, code CommandCode, op
 
 func isUnassignedCommandResult(payload []byte) bool {
 	return len(payload) == 2 && payload[0] == 0x19 && payload[1] == 0x00
+}
+
+func isTrackerStatusPayload(payload []byte) bool {
+	_, err := decodeTrackerStatus(payload)
+	return err == nil
+}
+
+func isPasswordWrongResult(payload []byte) bool {
+	return len(payload) == 1 && payload[0] == 0x01
 }
 
 // SetPassword sets a new six-byte password.
@@ -302,7 +463,11 @@ func (s *Session) SetPassword(ctx context.Context, password string, opts Command
 
 // SetName sets the device name.
 func (s *Session) SetName(ctx context.Context, name string, opts CommandOptions) (CommandResult, error) {
-	if len(name) == 0 || len(name) > 18 {
+	maxLen := 18
+	if s.protocol == ProtocolV3 {
+		maxLen = 19
+	}
+	if len(name) == 0 || len(name) > maxLen {
 		return CommandResult{}, &OperationError{Operation: "set_name", DeviceID: s.deviceID, Err: ErrInvalidInput}
 	}
 	return s.SendCommand(ctx, Command{Code: cmdName, Payload: append([]byte{byte(len(name))}, []byte(name)...)}, opts)

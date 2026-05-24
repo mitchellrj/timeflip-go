@@ -9,11 +9,16 @@ import (
 
 func newTestSession(t *testing.T, conn *fakeConnection) *Session {
 	t.Helper()
+	return newTestSessionWithRequest(t, conn, ConnectRequest{DeviceID: "tf"})
+}
+
+func newTestSessionWithRequest(t *testing.T, conn *fakeConnection, req ConnectRequest) *Session {
+	t.Helper()
 	client, err := NewClient(&fakeTransport{connections: map[DeviceID]*fakeConnection{"tf": conn}}, Config{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	session, err := client.Connect(context.Background(), ConnectRequest{DeviceID: "tf"})
+	session, err := client.Connect(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,7 +27,7 @@ func newTestSession(t *testing.T, conn *fakeConnection) *Session {
 
 func TestAuthorizeRejectsWrongPassword(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
-		charCommandResult: {0x02},
+		charCommandResult: {0x01},
 	}})
 	_, err := session.Authorize(context.Background(), "000000")
 	if !errors.Is(err, ErrAuthorizationFailed) {
@@ -48,8 +53,8 @@ func TestAuthorizeBlankPasswordUsesDefault(t *testing.T) {
 func TestAuthorizeWaitsForFreshSuccessAfterStaleWrongResult(t *testing.T) {
 	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
 		charCommandResult: {
-			{0x02},
 			{0x01},
+			{0x02},
 		},
 	}}
 	session := newTestSession(t, conn)
@@ -125,6 +130,87 @@ func TestReadDeviceInfoFormatsSystemIDAsHex(t *testing.T) {
 	}
 }
 
+func TestReadDeviceInfoV3UsesAdvertisedName(t *testing.T) {
+	session := newTestSessionWithRequest(t, &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charFirmwareRevision: []byte("TFv3.1"),
+		},
+		readErrs: map[CharacteristicID]error{
+			charDeviceName:       errors.New("device name characteristic should not be read for explicit v3"),
+			charManufacturerName: ErrProtocol,
+			charModelNumber:      ErrProtocol,
+			charHardwareRevision: ErrProtocol,
+			charSystemID:         ErrProtocol,
+		},
+	}, ConnectRequest{DeviceID: "tf", AdvertisedName: "TimeFlip Broadcast", ProtocolVersion: ProtocolV3})
+	info, err := session.ReadDeviceInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name != "TimeFlip Broadcast" || info.FirmwareRevision != "TFv3.1" || info.ProtocolVersion != ProtocolV3 {
+		t.Fatalf("unexpected v3 info: %+v", info)
+	}
+	if _, ok := info.Raw[charDeviceName]; ok {
+		t.Fatalf("v3 read info should not include a Generic Access device name read: %+v", info.Raw)
+	}
+}
+
+func TestReadDeviceInfoV3RefreshesAdvertisedName(t *testing.T) {
+	conn := &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charFirmwareRevision: []byte("TFv3.1"),
+		},
+		readErrs: map[CharacteristicID]error{
+			charDeviceName:       errors.New("device name characteristic should not be read for explicit v3"),
+			charManufacturerName: ErrProtocol,
+			charModelNumber:      ErrProtocol,
+			charHardwareRevision: ErrProtocol,
+			charSystemID:         ErrProtocol,
+		},
+	}
+	transport := &fakeTransport{
+		peripherals: []Peripheral{{ID: "tf", Name: "Updated Broadcast"}},
+		connections: map[DeviceID]*fakeConnection{"tf": conn},
+	}
+	client, err := NewClient(transport, Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := client.Connect(context.Background(), ConnectRequest{DeviceID: "tf", AdvertisedName: "Old Broadcast", ProtocolVersion: ProtocolV3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := session.ReadDeviceInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name != "Updated Broadcast" {
+		t.Fatalf("expected current advertised name, got %+v", info)
+	}
+}
+
+func TestReadDeviceInfoUsesAdvertisedNameWhenCharacteristicMissing(t *testing.T) {
+	session := newTestSessionWithRequest(t, &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charFirmwareRevision: []byte("FW_v3.47"),
+		},
+		readErrs: map[CharacteristicID]error{
+			charDeviceName:       ErrProtocol,
+			charManufacturerName: ErrProtocol,
+			charModelNumber:      ErrProtocol,
+			charHardwareRevision: ErrProtocol,
+			charSystemID:         ErrProtocol,
+		},
+	}, ConnectRequest{DeviceID: "tf", AdvertisedName: "Broadcast Name"})
+	info, err := session.ReadDeviceInfo(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Name != "Broadcast Name" {
+		t.Fatalf("expected advertised fallback name, got %+v", info)
+	}
+}
+
 func TestReadDeviceInfoFailsWhenAllFieldsMissing(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{readErrs: map[CharacteristicID]error{
 		charDeviceName:       ErrProtocol,
@@ -142,6 +228,7 @@ func TestReadDeviceInfoFailsWhenAllFieldsMissing(t *testing.T) {
 
 func TestReadTaskParametersUsesDataResponse(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand:       {byte(cmdReadTask), 0x02},
 		charCommandResult: {byte(cmdReadTask), 0x01, 0x02, 0x00, 0x00, 0x05, 0xDC, 0x00, 0x00, 0x00, 0x2A},
 	}}
 	session := newTestSession(t, conn)
@@ -158,12 +245,15 @@ func TestReadTaskParametersUsesDataResponse(t *testing.T) {
 }
 
 func TestReadTaskParametersWaitsForMatchingCommandResponse(t *testing.T) {
-	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
-		charCommandResult: {
+	conn := &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charCommand: {byte(cmdReadTask), 0x02},
+		},
+		readSeq: map[CharacteristicID][][]byte{charCommandResult: {
 			{0x18, 0x00},
 			{byte(cmdReadTask), 0x01, 0x02, 0x00, 0x00, 0x05, 0xDC, 0x00, 0x00, 0x00, 0x2A},
-		},
-	}}
+		}},
+	}
 	session := newTestSession(t, conn)
 	task, err := session.ReadTaskParameters(context.Background(), 1, CommandOptions{Timeout: time.Second})
 	if err != nil {
@@ -176,6 +266,7 @@ func TestReadTaskParametersWaitsForMatchingCommandResponse(t *testing.T) {
 
 func TestReadTaskParametersTreats1900AsUnassigned(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand:       {byte(cmdReadTask), 0x02},
 		charCommandResult: {0x19, 0x00},
 	}}
 	session := newTestSession(t, conn)
@@ -190,6 +281,7 @@ func TestReadTaskParametersTreats1900AsUnassigned(t *testing.T) {
 
 func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand:       {byte(cmdTapRead), 0x02},
 		charCommandResult: {byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
 	}}
 	session := newTestSession(t, conn)
@@ -206,12 +298,15 @@ func TestReadTapSettingsUsesDataResponse(t *testing.T) {
 }
 
 func TestReadTapSettingsWaitsForMatchingCommandResponse(t *testing.T) {
-	conn := &fakeConnection{readSeq: map[CharacteristicID][][]byte{
-		charCommandResult: {
+	conn := &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charCommand: {byte(cmdTapRead), 0x02},
+		},
+		readSeq: map[CharacteristicID][][]byte{charCommandResult: {
 			{0x18, 0x00},
 			{byte(cmdTapRead), 0x3A, 20, 0x3B, 10, 0x3C, 5, 0x3D, 30},
-		},
-	}}
+		}},
+	}
 	session := newTestSession(t, conn)
 	settings, err := session.ReadTapSettings(context.Background(), CommandOptions{Timeout: time.Second})
 	if err != nil {
@@ -224,6 +319,7 @@ func TestReadTapSettingsWaitsForMatchingCommandResponse(t *testing.T) {
 
 func TestReadTapSettingsTreats1900AsUnassigned(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand:       {byte(cmdTapRead), 0x02},
 		charCommandResult: {0x19, 0x00},
 	}}
 	session := newTestSession(t, conn)
@@ -240,6 +336,7 @@ func TestReadHistoryProtocolErrorIncludesPayloadDetails(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
 		charHistory: {0x01, 0x02},
 	}})
+	session.protocol = ProtocolV4
 	_, err := session.ReadHistory(context.Background(), HistoryRequest{})
 	if !errors.Is(err, ErrProtocol) {
 		t.Fatalf("expected protocol error, got %v", err)
@@ -253,9 +350,85 @@ func TestReadHistoryProtocolErrorIncludesPayloadDetails(t *testing.T) {
 	}
 }
 
+func TestReadHistoryV3UsesCommandOutputCharacteristic(t *testing.T) {
+	packet := make([]byte, 21)
+	packet[0] = 0x00
+	packet[1] = 0x01
+	packet[2] = byte(7<<2) | 0x02
+	conn := &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charCommand: {byte(cmdHistoryRead), 0x02},
+		},
+		readSeq: map[CharacteristicID][][]byte{
+			charCommandResult: {packet, make([]byte, 21)},
+		},
+	}
+	session := newTestSession(t, conn)
+	session.protocol = ProtocolV3
+	entries, err := session.ReadHistory(context.Background(), HistoryRequest{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Facet != 7 || entries[0].DurationSeconds != 258 {
+		t.Fatalf("unexpected v3 history entries: %+v", entries)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdHistoryRead)}) {
+		t.Fatalf("expected v3 history command write, got %+v", conn.writes)
+	}
+}
+
+func TestReadSystemStateUnsupportedForV3(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	session.protocol = ProtocolV3
+	_, err := session.ReadSystemState(context.Background())
+	if !errors.Is(err, ErrUnsupportedOperation) {
+		t.Fatalf("expected unsupported operation, got %v", err)
+	}
+}
+
+func TestReadTrackerStatusUsesCommandOutput(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand:       {byte(cmdStatus), 0x02},
+		charCommandResult: {0x02, 0x01, 0x00, 0x0F},
+		charFacets:        {0x08},
+	}}
+	session := newTestSession(t, conn)
+	status, err := session.ReadTrackerStatus(context.Background(), CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.LockEnabled || !status.PauseEnabled || status.AutoPauseMinutes != 15 || !status.CurrentFacetKnown || status.CurrentFacet != 8 {
+		t.Fatalf("unexpected tracker status: %+v", status)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charCommand || string(conn.writes[0].payload) != string([]byte{byte(cmdStatus)}) {
+		t.Fatalf("unexpected status command write: %+v", conn.writes)
+	}
+}
+
+func TestReadTrackerStatusWaitsForDecodablePayload(t *testing.T) {
+	conn := &fakeConnection{
+		reads: map[CharacteristicID][]byte{
+			charCommand: {byte(cmdStatus), 0x02},
+			charFacets:  {0x03},
+		},
+		readSeq: map[CharacteristicID][][]byte{charCommandResult: {
+			{byte(cmdReadTask), 0x01, 0x02, 0x03},
+			{0x01, 0x02, 0x00, 0x00},
+		}},
+	}
+	session := newTestSession(t, conn)
+	status, err := session.ReadTrackerStatus(context.Background(), CommandOptions{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !status.LockEnabled || status.PauseEnabled || status.AutoPauseMinutes != 0 || !status.CurrentFacetKnown || status.CurrentFacet != 3 {
+		t.Fatalf("unexpected tracker status: %+v", status)
+	}
+}
+
 func TestSendCommandRejected(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
-		charCommandResult: {byte(cmdLock), 0x01},
+		charCommand: {byte(cmdLock), 0x01},
 	}})
 	_, err := session.SetLock(context.Background(), true, CommandOptions{})
 	if !errors.Is(err, ErrCommandRejected) {
@@ -263,9 +436,57 @@ func TestSendCommandRejected(t *testing.T) {
 	}
 }
 
+func TestSendCommandWaitsForMatchingCommandAcknowledgement(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{readSeq: map[CharacteristicID][][]byte{
+		charCommand: {
+			{0x18, 0x02},
+			{byte(cmdName), 0x02},
+		},
+	}})
+	result, err := session.SetName(context.Background(), "test", CommandOptions{Timeout: time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Status.OK || result.Status.Code != cmdName {
+		t.Fatalf("unexpected command result: %+v", result)
+	}
+}
+
+func TestSendCommandIgnoresTrailingCommandCharacteristicBytes(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand: {byte(cmdName), 0x02, 0xAA, 0xBB, 0x00, 0x00, 0x00, 0x01},
+	}})
+	result, err := session.SetName(context.Background(), "test", CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Status.OK || result.Status.Code != cmdName {
+		t.Fatalf("unexpected command result: %+v", result)
+	}
+	if string(result.Status.Raw) != string([]byte{byte(cmdName), 0x02, 0xAA, 0xBB}) {
+		t.Fatalf("expected first four acknowledgement bytes only, got 0x%X", result.Status.Raw)
+	}
+	if string(result.Payload) != string(result.Status.Raw) {
+		t.Fatalf("expected payload to mirror trimmed acknowledgement, got payload=0x%X raw=0x%X", result.Payload, result.Status.Raw)
+	}
+}
+
+func TestSendCommandTrimsNULTerminatedCommandAcknowledgement(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand: {byte(cmdName), 0x02, 0x00, 0xBB, 0xCC},
+	}})
+	result, err := session.SetName(context.Background(), "test", CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(result.Status.Raw) != string([]byte{byte(cmdName), 0x02}) {
+		t.Fatalf("expected acknowledgement to stop at NUL terminator, got 0x%X", result.Status.Raw)
+	}
+}
+
 func TestSendCommandMalformedStatusPreservesPayload(t *testing.T) {
 	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
-		charCommandResult: {byte(cmdName), 0x00},
+		charCommand: {byte(cmdName), 0x00},
 	}})
 	result, err := session.SetName(context.Background(), "Desk Timer", CommandOptions{})
 	if !errors.Is(err, ErrProtocol) {
@@ -273,6 +494,21 @@ func TestSendCommandMalformedStatusPreservesPayload(t *testing.T) {
 	}
 	if string(result.Payload) != string([]byte{byte(cmdName), 0x00}) || string(result.Status.Raw) != string([]byte{byte(cmdName), 0x00}) {
 		t.Fatalf("expected raw malformed command payload to be preserved, got result=%+v", result)
+	}
+}
+
+func TestSetAutoPauseUsesTimeFlipBigEndianForV3(t *testing.T) {
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charCommand: {byte(cmdAutoPause), 0x02},
+	}}
+	session := newTestSession(t, conn)
+	session.protocol = ProtocolV3
+	_, err := session.SetAutoPause(context.Background(), 0x1234, CommandOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conn.writes) != 1 || string(conn.writes[0].payload) != string([]byte{byte(cmdAutoPause), 0x12, 0x34}) {
+		t.Fatalf("expected v3 big-endian auto-pause write, got %+v", conn.writes)
 	}
 }
 

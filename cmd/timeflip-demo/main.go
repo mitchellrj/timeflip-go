@@ -22,7 +22,22 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(2)
 	}
-	client, err := timeflip.NewClient(macos.NewTransport(), timeflip.Config{
+	transport := timeflip.Transport(macos.NewTransport())
+	var traceFile *os.File
+	if cfg.TraceBLEPath != "" {
+		traceWriter := os.Stderr
+		if cfg.TraceBLEPath != "-" {
+			traceFile, err = os.Create(cfg.TraceBLEPath)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+			defer traceFile.Close()
+			traceWriter = traceFile
+		}
+		transport = NewTracingTransport(transport, traceWriter)
+	}
+	client, err := timeflip.NewClient(transport, timeflip.Config{
 		CommunicationTimeout: cfg.CommunicationTimeout,
 	})
 	if err != nil {
@@ -48,6 +63,7 @@ func parseFlags(args []string) (DemoConfig, error) {
 	fs.BoolVar(&cfg.IncludeRawEvents, "include-raw", false, "include raw event bytes when streaming")
 	fs.BoolVar(&cfg.IncludeUnsupportedDevices, "include-unsupported", false, "include unsupported BLE devices in list output")
 	fs.BoolVar(&cfg.NoColor, "no-color", false, "disable ANSI color output")
+	fs.StringVar(&cfg.TraceBLEPath, "trace-ble", "", "write raw BLE operation trace to PATH, or '-' for stderr; trace includes password bytes")
 	if err := fs.Parse(args); err != nil {
 		return DemoConfig{}, err
 	}

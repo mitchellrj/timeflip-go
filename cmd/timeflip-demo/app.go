@@ -19,17 +19,53 @@ type DemoConfig struct {
 	IncludeRawEvents          bool
 	IncludeUnsupportedDevices bool
 	NoColor                   bool
+	TraceBLEPath              string
 }
 
 type DemoState struct {
 	SelectedDeviceID   timeflip.DeviceID
+	SelectedDeviceName string
+	KnownDeviceNames   map[timeflip.DeviceID]string
 	ActiveSession      *timeflip.Session
 	Authorized         bool
 	ActiveStreamCancel context.CancelFunc
 }
 
+func (s *DemoState) RememberDevices(devices []timeflip.DiscoveredDevice) {
+	if s.KnownDeviceNames == nil {
+		s.KnownDeviceNames = map[timeflip.DeviceID]string{}
+	}
+	for _, device := range devices {
+		if device.Name == "" {
+			continue
+		}
+		s.KnownDeviceNames[device.ID] = device.Name
+		if s.SelectedDeviceID == device.ID {
+			s.SelectedDeviceName = device.Name
+		}
+	}
+}
+
 func (s *DemoState) SetSelectedDevice(id timeflip.DeviceID) {
+	name := ""
+	if s.KnownDeviceNames != nil {
+		name = s.KnownDeviceNames[id]
+	}
 	s.SelectedDeviceID = id
+	s.SelectedDeviceName = name
+}
+
+func (s *DemoState) DeviceName(id timeflip.DeviceID) string {
+	if id == "" {
+		return ""
+	}
+	if s.SelectedDeviceID == id && s.SelectedDeviceName != "" {
+		return s.SelectedDeviceName
+	}
+	if s.KnownDeviceNames == nil {
+		return ""
+	}
+	return s.KnownDeviceNames[id]
 }
 
 func (s *DemoState) SetSession(session *timeflip.Session) {

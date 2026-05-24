@@ -11,6 +11,10 @@ type Client struct {
 	transport Transport
 }
 
+type advertisedNameProvider interface {
+	AdvertisedName(context.Context, DeviceID) (string, bool)
+}
+
 // NewClient creates a client from a BLE transport and configuration.
 func NewClient(transport Transport, config Config) (*Client, error) {
 	if transport == nil {
@@ -54,6 +58,13 @@ func (c *Client) Connect(ctx context.Context, req ConnectRequest) (*Session, err
 	if req.DeviceID == "" {
 		return nil, &OperationError{Operation: "connect", Err: ErrInvalidInput}
 	}
+	version := req.ProtocolVersion
+	if version == ProtocolAuto {
+		version = c.config.ProtocolVersion
+	}
+	if !validProtocolVersion(version) {
+		return nil, &OperationError{Operation: "connect", DeviceID: req.DeviceID, Err: ErrInvalidInput}
+	}
 	ctx, cancel := timeoutFrom(ctx, c.config.CommunicationTimeout, req.Timeout)
 	defer cancel()
 	conn, err := c.transport.Connect(ctx, req.DeviceID)
@@ -61,11 +72,34 @@ func (c *Client) Connect(ctx context.Context, req ConnectRequest) (*Session, err
 		return nil, wrapContextErr("connect", req.DeviceID, "", 0, err)
 	}
 	return &Session{
-		deviceID:       req.DeviceID,
-		conn:           conn,
-		defaultTimeout: c.config.CommunicationTimeout,
-		done:           make(chan struct{}),
+		deviceID:             req.DeviceID,
+		advertisedName:       req.AdvertisedName,
+		advertisedNameReader: c.advertisedNameReader(req.DeviceID),
+		conn:                 conn,
+		defaultTimeout:       c.config.CommunicationTimeout,
+		protocol:             version,
+		done:                 make(chan struct{}),
 	}, nil
+}
+
+func (c *Client) advertisedNameReader(id DeviceID) func(context.Context) (string, bool) {
+	return func(ctx context.Context) (string, bool) {
+		if provider, ok := c.transport.(advertisedNameProvider); ok {
+			if name, ok := provider.AdvertisedName(ctx, id); ok {
+				return name, true
+			}
+		}
+		peripherals, err := c.transport.Scan(ctx, ScanFilter{IncludeUnsupported: true})
+		if err != nil {
+			return "", false
+		}
+		for _, peripheral := range peripherals {
+			if peripheral.ID == id && peripheral.Name != "" {
+				return peripheral.Name, true
+			}
+		}
+		return "", false
+	}
 }
 
 // Pair pairs a new or reset TimeFlip2 device.
@@ -119,7 +153,7 @@ func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, erro
 	}
 
 	result.Stage = PairingStageVerify
-	if _, err := session.ReadSystemState(ctx); err != nil {
+	if err := session.verifyUsable(ctx); err != nil {
 		result.Stages = append(result.Stages, stage(string(PairingStageVerify), false, err, nil))
 		return result, err
 	}

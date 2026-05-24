@@ -84,6 +84,36 @@ func (t *Transport) Scan(ctx context.Context, filter timeflip.ScanFilter) ([]tim
 	return peripherals, nil
 }
 
+// AdvertisedName returns the latest BLE advertised name known for a peripheral.
+func (t *Transport) AdvertisedName(ctx context.Context, id timeflip.DeviceID) (string, bool) {
+	if id == "" {
+		return "", false
+	}
+	var fallback string
+	if result, ok := t.lookup(id); ok {
+		fallback = result.LocalName()
+	}
+	if err := t.ensureAdapter(ctx); err != nil {
+		return fallback, fallback != ""
+	}
+	var found string
+	_ = t.scan(ctx, func(result bluetooth.ScanResult) bool {
+		peripheral := t.remember(result)
+		if peripheral.ID != id {
+			return false
+		}
+		if peripheral.Name != "" {
+			found = peripheral.Name
+			return true
+		}
+		return false
+	})
+	if found != "" {
+		return found, true
+	}
+	return fallback, fallback != ""
+}
+
 func (t *Transport) scan(ctx context.Context, handle func(bluetooth.ScanResult) bool) error {
 	t.mu.Lock()
 	if t.scanning {
@@ -169,10 +199,7 @@ func (t *Transport) Connect(ctx context.Context, id timeflip.DeviceID) (timeflip
 		}
 	}
 
-	peripheral := t.remember(result)
-	if !timeflip.IsSupportedPeripheral(peripheral) {
-		return nil, operationErr("macos_connect", id, timeflip.ErrUnsupportedDevice)
-	}
+	t.remember(result)
 
 	params := bluetooth.ConnectionParams{}
 	if deadline, ok := ctx.Deadline(); ok {

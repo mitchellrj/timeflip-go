@@ -101,6 +101,15 @@ func (f *TextFormatter) PrintReadResult(value any) {
 		fmt.Fprintf(f.out, "%s %d%%\n", f.style("battery:", ansiCyan), v.Percentage)
 	case timeflip.SystemState:
 		printSystemState(f.out, v, "")
+	case timeflip.TrackerStatus:
+		currentFacet := "unknown"
+		if v.CurrentFacetKnown {
+			currentFacet = fmt.Sprintf("%d", v.CurrentFacet)
+		}
+		fmt.Fprintf(f.out, "lock: %v\npause: %v\nautopause_minutes: %d\ncurrent_facet: %s\n", v.LockEnabled, v.PauseEnabled, v.AutoPauseMinutes, currentFacet)
+		if v.CurrentFacetKnown {
+			fmt.Fprintf(f.out, "current_facet_undefined: %v\n", v.CurrentFacetUndefined)
+		}
 	case []timeflip.HistoryEntry:
 		if len(v) == 0 {
 			fmt.Fprintln(f.out, "history: no entries")
@@ -234,6 +243,20 @@ func (f *TextFormatter) PrintError(err error) {
 			} else {
 				fmt.Fprintln(f.err, "  next: check authorization/lock state with read system, then retry the command")
 			}
+			return
+		}
+		if (opErr.Operation == "send_command" || isCommandBackedRead(opErr.Operation)) && errors.Is(err, timeflip.ErrAuthorizationFailed) {
+			fmt.Fprintf(f.err, "%s device is not accepting commands", f.style("authorization error:", ansiRed))
+			if opErr.DeviceID != "" {
+				fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+			}
+			if opErr.Command != 0 {
+				fmt.Fprintf(f.err, " for command 0x%02X", byte(opErr.Command))
+			}
+			fmt.Fprintln(f.err, ".")
+			fmt.Fprintln(f.err, "  device_response: password check failed (0x01)")
+			fmt.Fprintln(f.err, "  meaning: the command was sent while the device still considers this session unauthorized")
+			fmt.Fprintln(f.err, "  next: run authorize with the current six-character password; if the device was factory reset, try 000000 and confirm the reset really completed")
 			return
 		}
 		if isCommandBackedRead(opErr.Operation) && errors.Is(err, timeflip.ErrProtocol) {

@@ -17,7 +17,10 @@ client, err := timeflip.NewClient(transport, timeflip.Config{
     CommunicationTimeout: 10 * time.Second,
 })
 devices, err := client.ListDevices(ctx, timeflip.ScanFilter{})
-session, err := client.Connect(ctx, timeflip.ConnectRequest{DeviceID: devices[0].ID})
+session, err := client.Connect(ctx, timeflip.ConnectRequest{
+    DeviceID:       devices[0].ID,
+    AdvertisedName: devices[0].Name,
+})
 _, err = session.Authorize(ctx, "")
 events, errs, err := session.Events(ctx, timeflip.EventOptions{Buffer: 16})
 ```
@@ -33,6 +36,16 @@ Unpairing is also staged. When device-side reset behavior such as factory reset 
 ## Timeouts
 
 The client has one global communication timeout. Commands may provide a `CommandOptions.Timeout` override for that command only.
+
+## Command Responses
+
+TimeFlip2 command acknowledgement is read back from the command characteristic after a command write. The value is NUL-terminated; after trimming at the first NUL byte, only the first four bytes are command acknowledgement data and any remaining bytes are ignored. The acknowledgement begins as `0xXXYY`, where `XX` is the command and `YY` is `0x02` for executed or `0x01` for error. Command output data, when a command has output, is read separately from the command-result output characteristic.
+
+## Protocol Versions
+
+The hardware documents in `docs/Hardware` describe two protocol families. The v3-style protocol uses the command-result output characteristic for history packages and packs seven 3-byte history blocks into each 21-byte package. The v4-style protocol adds TimeFlip events, system state, and the separate history data characteristic. The client supports an explicit protocol version in `Config` or `ConnectRequest`; automatic mode uses firmware guidance where available (`FW_v3.47` and newer behaves as v4) and otherwise prefers v4 behavior with a v3 fallback where practical.
+
+For v3 devices, the friendly device name is not exposed through the documented readable characteristics. `ReadDeviceInfo` refreshes the current broadcast name through transport-supported advertised-name lookup or BLE discovery when available, with `ConnectRequest.AdvertisedName` as a fallback. If the device omits the Generic Access Device Name characteristic before the protocol version is known, the advertised name is still used so device info does not show a blank name.
 
 ## Events
 
@@ -54,6 +67,7 @@ Useful startup flags:
 - `-include-raw`: print raw event bytes while streaming.
 - `-include-unsupported`: include unsupported BLE devices in scan output.
 - `-no-color`: disable ANSI color output.
+- `-trace-ble PATH`: write raw BLE operation logs for the CLI session. Use `-trace-ble -` for stderr. The trace includes password characteristic bytes.
 
 Inside the prompt, use `help` to see commands. A typical smoke-test path is:
 
@@ -65,6 +79,7 @@ connect
 authorize
 read info
 read battery
+read status
 stream
 stop
 close
@@ -74,7 +89,7 @@ exit
 
 When running in a supported terminal, the demo keeps in-process command history for the main prompt and supports up/down arrows. Output uses ANSI colors when stdout is a TTY; use `-no-color` or `NO_COLOR=1` to disable color.
 
-The demo also exposes `read system`, `read history`, `read task FACET`, `read tap`, writable configuration through `write ...`, and reset commands through `command ...`. Destructive operations such as password changes, task reset, factory reset, and unpairing ask for confirmation.
+The demo also exposes `read system`, `read history`, `read task FACET`, `read tap`, writable configuration through `write ...`, and reset commands through `command ...`. Use `read status` to inspect current lock, pause, auto-pause, and current facet state; pause is not guaranteed to appear as a streaming event. Destructive operations such as password changes, task reset, factory reset, and unpairing ask for confirmation.
 
 On MacOS, the demo uses the real CoreBluetooth-backed adapter. On other platforms, the `macos` package still compiles but reports unsupported scan/connect behavior. OS-level pairing and unpairing may still require manual action in macOS Bluetooth settings; the library reports those actions explicitly instead of claiming direct OS changes were performed.
 

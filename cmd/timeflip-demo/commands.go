@@ -26,7 +26,7 @@ func buildCommands() map[string]demoCommand {
 		{"unpair", "unpair [DEVICE_ID]", "Run guided unpairing and optional reset.", runUnpair},
 		{"connect", "connect [DEVICE_ID]", "Open an active session.", runConnect},
 		{"authorize", "authorize", "Authorize the active session; blank uses the default password.", runAuthorize},
-		{"read", "read info|battery|system|history|task|tap [args]", "Read data or configuration from the active session.", runRead},
+		{"read", "read info|battery|system|status|history|task|tap [args]", "Read data or configuration from the active session.", runRead},
 		{"write", "write password|name|lock|pause|autopause|led|color|task|tap [args]", "Write supported configuration.", runWrite},
 		{"command", "command reset-task-info|factory-reset", "Execute supported device commands.", runCommand},
 		{"stream", "stream", "Print technical device events until stop, close, or exit.", runStream},
@@ -66,6 +66,7 @@ func runHelp(_ context.Context, app *DemoApp, args []string) error {
 	}
 	app.out.PrintLine("Password prompts use standard input; terminal echo is not disabled in this dependency-free demo. Blank uses the default TimeFlip2 password 000000.")
 	app.out.PrintLine("When running in a supported terminal, use up/down arrows for command history. Use -no-color to disable color output.")
+	app.out.PrintLine("Use -trace-ble PATH to record raw BLE reads, writes, and notifications for this CLI session.")
 	return nil
 }
 
@@ -82,8 +83,12 @@ func runStatus(_ context.Context, app *DemoApp, _ []string) error {
 	if app.streamActive() {
 		stream = "active"
 	}
-	app.out.Printf("selected_device: %s\nsession: %s\nauthorized: %v\nstream: %s\ntimeout: %s\ncommand_timeout: %s\nevent_buffer: %d\ninclude_raw: %v\ninclude_unsupported: %v\n",
-		selected, session, app.state.Authorized, stream, app.cfg.CommunicationTimeout, app.cfg.CommandTimeout, app.cfg.EventBuffer, app.cfg.IncludeRawEvents, app.cfg.IncludeUnsupportedDevices)
+	traceBLE := "off"
+	if app.cfg.TraceBLEPath != "" {
+		traceBLE = app.cfg.TraceBLEPath
+	}
+	app.out.Printf("selected_device: %s\nsession: %s\nauthorized: %v\nstream: %s\ntimeout: %s\ncommand_timeout: %s\nevent_buffer: %d\ninclude_raw: %v\ninclude_unsupported: %v\ntrace_ble: %s\n",
+		selected, session, app.state.Authorized, stream, app.cfg.CommunicationTimeout, app.cfg.CommandTimeout, app.cfg.EventBuffer, app.cfg.IncludeRawEvents, app.cfg.IncludeUnsupportedDevices, traceBLE)
 	return nil
 }
 
@@ -92,6 +97,7 @@ func runList(ctx context.Context, app *DemoApp, _ []string) error {
 	if err != nil {
 		return err
 	}
+	app.state.RememberDevices(devices)
 	app.out.PrintDevices(devices)
 	supported := make([]timeflip.DiscoveredDevice, 0, 1)
 	for _, d := range devices {
@@ -113,6 +119,10 @@ func runList(ctx context.Context, app *DemoApp, _ []string) error {
 	}
 	if app.state.SelectedDeviceID == "" && len(supported) > 0 {
 		app.out.PrintSuggestions([]string{"select DEVICE_ID", "pair DEVICE_ID"})
+		return nil
+	}
+	if app.state.SelectedDeviceID == "" && len(devices) > 0 && len(supported) == 0 && app.cfg.IncludeUnsupportedDevices {
+		app.out.PrintSuggestions([]string{"connect DEVICE_ID", "select DEVICE_ID"})
 		return nil
 	}
 	if app.state.SelectedDeviceID != "" {
@@ -255,7 +265,11 @@ func runConnect(ctx context.Context, app *DemoApp, args []string) error {
 			return err
 		}
 	}
-	session, err := app.client.Connect(ctx, timeflip.ConnectRequest{DeviceID: id, Timeout: app.cfg.CommandTimeout})
+	session, err := app.client.Connect(ctx, timeflip.ConnectRequest{
+		DeviceID:       id,
+		AdvertisedName: app.state.DeviceName(id),
+		Timeout:        app.cfg.CommandTimeout,
+	})
 	if err != nil {
 		return err
 	}
@@ -323,7 +337,7 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 		return err
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: read info|battery|system|history|task|tap [args]")
+		return fmt.Errorf("usage: read info|battery|system|status|history|task|tap [args]")
 	}
 	switch strings.ToLower(args[0]) {
 	case "info":
@@ -345,6 +359,13 @@ func runRead(ctx context.Context, app *DemoApp, args []string) error {
 		if err == nil {
 			app.out.PrintReadResult(value)
 			app.out.PrintSuggestions([]string{"read tap", "stream", "write name NAME"})
+		}
+		return err
+	case "status":
+		value, err := session.ReadTrackerStatus(ctx, app.commandOptions())
+		if err == nil {
+			app.out.PrintReadResult(value)
+			app.out.PrintSuggestions([]string{"write pause on|off", "write autopause MINUTES", "stream"})
 		}
 		return err
 	case "history":
