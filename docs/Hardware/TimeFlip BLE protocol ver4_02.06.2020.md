@@ -8,7 +8,7 @@
 
 
 
-**TIMEFLP2** 
+**TIMEFLP2**
 
 **DATA TRANSFER PROTOCOL**
 
@@ -46,9 +46,9 @@ Tab. 1 – TimeFlip2 services and characteristics:
 |||History data/<br>F1196F58-71A4-11E6-BDF4-0800200C9A66|20|R, W, N|
 
 
-   
 
-**Firmware Revision String** 
+
+**Firmware Revision String**
 
 UUID:
 
@@ -59,9 +59,9 @@ UUID:
 |Firmware version|<p>Read</p><p></p>|6|<p>Contains stock firmware version.</p><p>0x544676332E31 = “TFv3.xx”</p>|
 
 
-   
 
-**Battery Level** 
+
+**Battery Level**
 
 UUID:
 
@@ -109,7 +109,7 @@ UUID:
 
 F1196F54-71A4-11E6-BDF4-0800200C9A66
 
-Successfully executed command is shown in characteristics as 0xXX 0x02, where 0хХХ is command message. 
+Successfully executed command is shown in characteristics as 0xXX 0x02, where 0хХХ is command message.
 
 Unexecuted command is shown in characteristics as 0xXX 0x01, where 0хХХ is command message.
 
@@ -144,7 +144,7 @@ F1196F56-71A4-11E6-BDF4-0800200C9A66
 | :-: | :-: | :-: | :-: |
 ||<p>Read,</p><p>Notify</p>|4|<p>System state is calibration characteristics. The first two bytes are responsible for the status:</p><p></p><p>0х00 0х00 – All OK</p><p>0х01 0х00 – The device has been reset to the factory      settings.</p><p>0х02 0х01 – Time synchronization required</p><p>0х02 0х02 – Facet color synchronization required</p><p>0х02 0х03 – LED brightness synchronization required</p><p>0х02 0х04 – Blink interval synchronization required</p><p>0х02 0х05 – Task parameters synchronization required</p><p>0х02 0х06 – Auto-pause synchronization required</p><p></p><p>The second two bytes are responsible for hardware issues: </p><p>0хХХ 0хХХ 0х00 0х00 – Peripherals initialized, all OK</p><p>0хХХ 0хХХ 0х02 0х01 – Accelerometer error</p><p>0хХХ 0хХХ 0х02 0х02 – Flash memory error</p><p>0хХХ 0хХХ 0х02 0х03 – Accelerometer and flash memory error</p>|
 
-This characteristic is used to check if the device is working properly or not. If the facet calibration in the device matches the calibration in the app. A check is performed by comparing a value read in the characteristic with the value stored in the app. When TIMEFIP facets are assigned, an arbitrary value is written to the characteristic and the same value is saved to the app. 
+This characteristic is used to check if the device is working properly or not. If the facet calibration in the device matches the calibration in the app. A check is performed by comparing a value read in the characteristic with the value stored in the app. When TIMEFIP facets are assigned, an arbitrary value is written to the characteristic and the same value is saved to the app.
 
 
 **Password characteristic**
@@ -161,7 +161,7 @@ If the password is not provided or incorrect, TIMEFLIP will not execute commands
 
 *The response for the password entered can be read in the “command result output characteristic”.*
 
-The result of the password check will be written to the command result output characteristic in the first (high) byte of the massive: 0x01 means the password is correct, 0x02- the password is wrong. 
+The result of the password check will be written to the command result output characteristic in the first (high) byte of the massive: 0x01 means the password is correct, 0x02- the password is wrong.
 
 **History characteristic**
 
@@ -177,7 +177,7 @@ History read-out protocol:
 
 History read request for a single event
 
-After history read-out request is sent (0x01), the number of the event in history will be written to the the characteristic. Example: 
+After history read-out request is sent (0x01), the number of the event in history will be written to the the characteristic. Example:
 
 <table>
     <thead width>

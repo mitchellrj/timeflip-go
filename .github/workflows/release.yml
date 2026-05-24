@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions: read-all
+
+jobs:
+  validate-tag:
+    name: Validate SemVer tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      is_prerelease: ${{ steps.validate.outputs.is_prerelease }}
+      release_name: ${{ steps.validate.outputs.release_name }}
+    steps:
+      - name: Validate tag
+        id: validate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          semver='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+          if [[ ! "$tag" =~ $semver ]]; then
+            printf 'Tag %s is not a valid leading-v SemVer tag.\n' "$tag" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          is_prerelease=false
+          if [[ "$version" == *-* ]]; then
+            is_prerelease=true
+          fi
+
+          {
+            printf 'tag=%s\n' "$tag"
+            printf 'version=%s\n' "$version"
+            printf 'is_prerelease=%s\n' "$is_prerelease"
+            printf 'release_name=%s\n' "$tag"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build SLSA artifacts (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: validate-tag
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            config-file: .slsa-goreleaser/linux-amd64.yml
+          - goos: linux
+            goarch: arm64
+            config-file: .slsa-goreleaser/linux-arm64.yml
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
+    with:
+      go-version-file: go.mod
+      config-file: ${{ matrix.config-file }}
+      upload-assets: true
+      upload-tag-name: ${{ needs.validate-tag.outputs.tag }}
+      prerelease: ${{ needs.validate-tag.outputs.is_prerelease == 'true' }}
+
+  checksums:
+    name: Publish SHA256 checksums
+    needs:
+      - validate-tag
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+    steps:
+      - name: Download release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p build/release-assets
+          gh release download "$RELEASE_TAG" \
+            --pattern 'timeflip-demo-*' \
+            --dir build/release-assets
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd build/release-assets
+          mapfile -t files < <(
+            find . -maxdepth 1 -type f \
+              ! -name '*.intoto.jsonl' \
+              ! -name 'SHA256SUMS.txt' \
+              -printf '%f\n' | sort
+          )
+
+          if [[ "${#files[@]}" -eq 0 ]]; then
+            printf 'No release binaries found for checksum generation.\n' >&2
+            exit 1
+          fi
+
+          sha256sum "${files[@]}" > SHA256SUMS.txt
+
+      - name: Upload checksums
+        shell: bash
+        run: gh release upload "$RELEASE_TAG" build/release-assets/SHA256SUMS.txt

@@ -1,7 +1,7 @@
 
-# DATA TRANSFER PROTOCOL 
+# DATA TRANSFER PROTOCOL
 
-All values are stored in TimeFlip on-board  RAM memory and are reset to default when the battery is taken out or replaced. 
+All values are stored in TimeFlip on-board  RAM memory and are reset to default when the battery is taken out or replaced.
 
 TimeFlip device uses Bluetooth Low Energy (BLE) protocol. Services and specifications are listed in the table:
 
@@ -94,9 +94,9 @@ Unexecuted command is shown in characteristics as 0xXX 0x01 where 0хХХ – is
 | Command | Write | 21 | 0xXXYY..YY, where XX - command, YY - data. response is in  “**command result output**” |
 |         | Read | 2  | 0xXXYY, where XX - command YY - error code (2 - OK, 1 - ERROR)|
 
-#### Commands: 
+#### Commands:
 
-0x01 – history read out request  
+0x01 – history read out request
 0x02 – delete history
 
 0x03 – calibration reset.
@@ -118,15 +118,15 @@ Auto-pause timer is automatically reset when TimeFlip is flipped to another face
 0xZZ 0xZZ – auto-pause timer value (in minutes)
 
 0x15 0xXX 0xZZ … 0xZZ - write name
-0xXX – number of symbols in name	
-0xZZ … 0xZZ - name (19 symbols MAX. ASCII coding) 
+0xXX – number of symbols in name
+0xZZ … 0xZZ - name (19 symbols MAX. ASCII coding)
 
-0х30 0xZZ … 0xZZ – set new password 
+0х30 0xZZ … 0xZZ – set new password
 0xZZ … 0xZZ – password set, length is 6 symbols
 
 0x50 0xAA – Delete current firmware and reboot to firmware loader.
 
-\* lock function  – locks TimeFlip to count time on current active facet and blocks the device from switching facets when TimeFlip is turned or flipped. 
+\* lock function  – locks TimeFlip to count time on current active facet and blocks the device from switching facets when TimeFlip is turned or flipped.
 
 \*\* Autopause function – automatically sets time count on pause after pre-set period of time (timer value).
 
@@ -141,7 +141,7 @@ Reserved for future use
 |-----|----------------|--------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
 |  Command   | Write, Read | 4            | Saves the value recorded between connections. The value is reset to ”0” when the battery is pulled out or “reset calibration” command is executed (0x03)”. |
 
-This characteristics is used to check whether TimeFlip facets calibration corresponds to facets calibration in the mobile app. The check is performed by comparing value read out from this characteristics and the one stored in the mobile app. When the facets are first time assigned in TimeFlip, an arbitrary number is written to present characteristics and in the same time in the mobile app. 
+This characteristics is used to check whether TimeFlip facets calibration corresponds to facets calibration in the mobile app. The check is performed by comparing value read out from this characteristics and the one stored in the mobile app. When the facets are first time assigned in TimeFlip, an arbitrary number is written to present characteristics and in the same time in the mobile app.
 
 ### Password characteristic / F1196F57-71A4-11E6-BDF4-0800200C9A66
 
@@ -149,7 +149,7 @@ This characteristics is used to check whether TimeFlip facets calibration corres
 |--------|--------|--------------|---|
 | Password | Write | 6            | Requires password to be written in it to allow TimeFlip operation. |
 
-If the password is not provided, or provided incorrect, TimeFlip service's characteristics will return nothing on reading. Note that: 
+If the password is not provided, or provided incorrect, TimeFlip service's characteristics will return nothing on reading. Note that:
 - TimeFlip requires password input after re-connect to authorize connected device
 - password is reset to default every time the battery is taken out or replaced
 - default password is ASCII "000000" or {0x30, 0x30, 0x30, 0x30, 0x30, 0x30}

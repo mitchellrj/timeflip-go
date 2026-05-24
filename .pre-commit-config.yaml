@@ -10,36 +10,25 @@ repos:
       - id: check-merge-conflict
       - id: check-yaml
       - id: end-of-file-fixer
-        exclude: ^(build/|frontend/dist/|frontend/node_modules/|\.venv/)
+        exclude: ^build/
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: trailing-whitespace
-        exclude: ^(build/|frontend/dist/|frontend/node_modules/|\.venv/)
+        exclude: ^build/
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
 
   - repo: local
     hooks:
-      - id: python-quality
-        name: Python quality and tests
-        entry: scripts/dev/pre-commit-python.sh
+      - id: go-quality
+        name: Go format, vet, tests, and module hygiene
+        entry: scripts/dev/pre-commit-go.sh
         language: system
         pass_filenames: false
-        files: ^(src/.*\.py|tests/.*\.py|pyproject\.toml|uv\.lock)$
-      - id: frontend-quality
-        name: Frontend lint, test, accessibility, and build
-        entry: scripts/dev/pre-commit-frontend.sh
-        language: system
-        pass_filenames: false
-        files: ^frontend/
-      - id: terraform-validate
-        name: Terraform fmt, validate, and Checkov
-        entry: scripts/dev/pre-commit-terraform.sh
-        language: system
-        pass_filenames: false
-        files: ^(infra/.*\.(tf|tfvars|hcl)|\.checkov\.yaml)$
+        files: ^(.*\.go|go\.mod|go\.sum)$
       - id: shell-syntax
         name: Shell syntax
         entry: scripts/dev/pre-commit-shell.sh
         language: system
+        pass_filenames: false
         files: ^scripts/.*\.sh$

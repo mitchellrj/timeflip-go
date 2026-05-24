@@ -76,7 +76,6 @@ func (s *DemoState) SetSession(session *timeflip.Session) {
 func (s *DemoState) ClearSession() {
 	s.ActiveSession = nil
 	s.Authorized = false
-	s.ActiveStreamCancel = nil
 }
 
 type DemoApp struct {
