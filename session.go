@@ -635,10 +635,7 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 		return event, notificationDecodeErr(s.deviceID, n.Characteristic, err)
 	case charEvents:
 		payload := append([]byte(nil), n.Payload...)
-		if kind, decoded, ok := decodeTimeFlipTextEvent(payload); ok {
-			if !includeRaw {
-				decoded = redactTypedEventRaw(decoded)
-			}
+		if kind, decoded, ok := decodeTimeFlipTextEvent(payload, includeRaw); ok {
 			event.Kind, event.Payload = kind, decoded
 		} else {
 			event.Kind, event.Payload = EventRaw, payload
@@ -665,26 +662,16 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 	}
 }
 
-func redactTypedEventRaw(payload any) any {
-	switch v := payload.(type) {
-	case FacetEvent:
-		v.Raw = nil
-		return v
-	case DoubleTapEvent:
-		v.Raw = nil
-		return v
-	default:
-		return payload
-	}
-}
-
-func decodeTimeFlipTextEvent(payload []byte) (EventKind, any, bool) {
+func decodeTimeFlipTextEvent(payload []byte, includeRaw bool) (EventKind, any, bool) {
 	text := cleanString(payload)
 	side, tap, ok := parseSideEventText(text)
 	if !ok {
 		return "", nil, false
 	}
-	raw := append([]byte(nil), payload...)
+	var raw []byte
+	if includeRaw {
+		raw = append([]byte(nil), payload...)
+	}
 	if tap || side >= 128 {
 		pause := side >= 128
 		if pause {

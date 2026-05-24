@@ -35,7 +35,7 @@ The library assumes the consuming application is trusted, but BLE advertisements
 
 The TimeFlip password is written as six bytes to the device password characteristic. Treat passwords as sensitive, avoid logging them, and use an empty password only when intentionally authorizing with the factory default `000000` for a new or reset device. The library does not persist passwords, device IDs, authorization state, event history, or payloads across sessions.
 
-Protocol errors redact raw payload bytes from default error strings. Trusted diagnostic code can inspect `ProtocolPayloadError.Payload` or call `RawPayloadHex()` when full bytes are needed for hardware troubleshooting. Event raw bytes for typed events are emitted only when `EventOptions.IncludeRaw` is true; raw/unknown events still carry their raw payload as the event payload because that is the event content.
+Protocol errors redact raw payload bytes from default error strings. Trusted diagnostic code can inspect `ProtocolPayloadError.Payload` when full bytes are needed for hardware troubleshooting. Event raw bytes for typed events are emitted only when `EventOptions.IncludeRaw` is true; raw/unknown events still carry their raw payload as the event payload because that is the event content.
 
 ## Unpairing
 

@@ -56,14 +56,6 @@ func (e *ProtocolPayloadError) Error() string {
 	return msg
 }
 
-// RawPayloadHex returns the full raw payload for trusted diagnostics.
-func (e *ProtocolPayloadError) RawPayloadHex() string {
-	if e == nil || len(e.Payload) == 0 {
-		return ""
-	}
-	return fmt.Sprintf("0x%X", e.Payload)
-}
-
 // Unwrap returns the protocol sentinel.
 func (e *ProtocolPayloadError) Unwrap() error {
 	return ErrProtocol

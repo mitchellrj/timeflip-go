@@ -408,9 +408,6 @@ func TestReadHistoryProtocolErrorIncludesPayloadDetails(t *testing.T) {
 	if strings.Contains(err.Error(), "0x0102") || !strings.Contains(err.Error(), "raw payload redacted") {
 		t.Fatalf("expected redacted payload in error string, got %q", err.Error())
 	}
-	if payloadErr.RawPayloadHex() != "0x0102" {
-		t.Fatalf("expected explicit raw payload helper, got %q", payloadErr.RawPayloadHex())
-	}
 }
 
 func TestReadHistoryV3UsesCommandOutputCharacteristic(t *testing.T) {
