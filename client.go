@@ -121,7 +121,9 @@ func (c *Client) Pair(ctx context.Context, req PairRequest) (PairingResult, erro
 		result.Stages = append(result.Stages, stage(string(PairingStageConnect), false, err, nil))
 		return result, err
 	}
-	defer session.Close(context.Background())
+	defer func() {
+		_ = session.Close(context.Background())
+	}()
 	result.Stages = append(result.Stages, stage(string(PairingStageConnect), true, nil, nil))
 
 	if req.AllowOSPairing {
@@ -181,7 +183,9 @@ func (c *Client) Unpair(ctx context.Context, req UnpairRequest) (UnpairingResult
 	if needsDeviceAccess {
 		session, err := c.Connect(ctx, ConnectRequest{DeviceID: req.DeviceID, Timeout: req.Timeout})
 		if err == nil {
-			defer session.Close(context.Background())
+			defer func() {
+				_ = session.Close(context.Background())
+			}()
 			result.Stages = append(result.Stages, stage(string(UnpairingStageConnect), true, nil, nil))
 			result.Stage = UnpairingStageAuthorize
 			if _, err := session.Authorize(ctx, password); err != nil {

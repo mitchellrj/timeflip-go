@@ -19,7 +19,7 @@ func main() {
 		if errors.Is(err, flag.ErrHelp) {
 			os.Exit(0)
 		}
-		fmt.Fprintln(os.Stderr, err)
+		writeLine(os.Stderr, err)
 		os.Exit(2)
 	}
 	transport := timeflip.Transport(macos.NewTransport())
@@ -29,10 +29,12 @@ func main() {
 		if cfg.TraceBLEPath != "-" {
 			traceFile, err = os.Create(cfg.TraceBLEPath)
 			if err != nil {
-				fmt.Fprintln(os.Stderr, err)
+				writeLine(os.Stderr, err)
 				os.Exit(1)
 			}
-			defer traceFile.Close()
+			defer func() {
+				_ = traceFile.Close()
+			}()
 			traceWriter = traceFile
 		}
 		transport = NewTracingTransport(transport, traceWriter)
@@ -41,7 +43,7 @@ func main() {
 		CommunicationTimeout: cfg.CommunicationTimeout,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		writeLine(os.Stderr, err)
 		os.Exit(1)
 	}
 	color := colorEnabled(os.Stdout, cfg.NoColor)
@@ -49,7 +51,7 @@ func main() {
 	app := NewDemoApp(client, cfg, NewTerminalPrompter(os.Stdin, os.Stdout), formatter)
 	formatter.PrintLine("TimeFlip2 demo CLI. Type help for commands, exit to quit.")
 	if err := app.Run(context.Background()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		writeLine(os.Stderr, err)
 		os.Exit(1)
 	}
 }

@@ -38,4 +38,5 @@ repos:
     hooks:
       - id: golangci-lint
         args: [--timeout=5m]
+        pass_filenames: false
         files: ^.*\.go$

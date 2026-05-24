@@ -27,32 +27,40 @@ func NewTextFormatterWithColor(out io.Writer, err io.Writer, color bool) *TextFo
 	return &TextFormatter{out: out, err: err, color: color}
 }
 
+func writef(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
+func writeLine(w io.Writer, args ...any) {
+	_, _ = fmt.Fprintln(w, args...)
+}
+
 func (f *TextFormatter) PrintLine(line string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintln(f.out, line)
+	writeLine(f.out, line)
 }
 
 func (f *TextFormatter) Printf(format string, args ...any) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintf(f.out, format, args...)
+	writef(f.out, format, args...)
 }
 
 func (f *TextFormatter) PrintDevices(devices []timeflip.DiscoveredDevice) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(devices) == 0 {
-		fmt.Fprintln(f.out, "no devices found")
+		writeLine(f.out, "no devices found")
 		return
 	}
-	fmt.Fprintln(f.out, f.style("ID\tNAME\tRSSI\tSUPPORTED\tMETADATA", ansiBold))
+	writeLine(f.out, f.style("ID\tNAME\tRSSI\tSUPPORTED\tMETADATA", ansiBold))
 	for _, d := range devices {
 		supported := fmt.Sprintf("%v", d.Supported)
 		if d.Supported {
 			supported = f.style(supported, ansiGreen)
 		}
-		fmt.Fprintf(f.out, "%s\t%s\t%d\t%s\t%s\n", d.ID, d.Name, d.RSSI, supported, formatMap(d.Metadata))
+		writef(f.out, "%s\t%s\t%d\t%s\t%s\n", d.ID, d.Name, d.RSSI, supported, formatMap(d.Metadata))
 	}
 }
 
@@ -60,7 +68,7 @@ func (f *TextFormatter) PrintStageResults(stages []timeflip.StageResult) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(stages) == 0 {
-		fmt.Fprintln(f.out, "stages: none")
+		writeLine(f.out, "stages: none")
 		return
 	}
 	for _, s := range stages {
@@ -70,12 +78,12 @@ func (f *TextFormatter) PrintStageResults(stages []timeflip.StageResult) {
 			status = "completed"
 			style = ansiGreen
 		}
-		fmt.Fprintf(f.out, "stage %s: %s\n", s.Stage, f.style(status, style))
+		writef(f.out, "stage %s: %s\n", s.Stage, f.style(status, style))
 		if s.Err != nil {
 			if timeflip.IsUnsupported(s.Err) && s.ManualAction != nil {
-				fmt.Fprintf(f.out, "  %s automatic %s is not available; follow the manual action below.\n", f.style("note:", ansiYellow), s.Stage)
+				writef(f.out, "  %s automatic %s is not available; follow the manual action below.\n", f.style("note:", ansiYellow), s.Stage)
 			} else {
-				fmt.Fprintf(f.out, "  %s %v\n", f.style("error:", ansiRed), s.Err)
+				writef(f.out, "  %s %v\n", f.style("error:", ansiRed), s.Err)
 			}
 		}
 		if s.ManualAction != nil {
@@ -95,10 +103,10 @@ func (f *TextFormatter) PrintReadResult(value any) {
 	defer f.mu.Unlock()
 	switch v := value.(type) {
 	case timeflip.DeviceInfo:
-		fmt.Fprintf(f.out, "name: %s\nmanufacturer: %s\nmodel: %s\nhardware: %s\nfirmware: %s\nsystem_id: %s\n",
+		writef(f.out, "name: %s\nmanufacturer: %s\nmodel: %s\nhardware: %s\nfirmware: %s\nsystem_id: %s\n",
 			v.Name, v.ManufacturerName, v.ModelNumber, v.HardwareRevision, v.FirmwareRevision, v.SystemID)
 	case timeflip.BatteryStatus:
-		fmt.Fprintf(f.out, "%s %d%%\n", f.style("battery:", ansiCyan), v.Percentage)
+		writef(f.out, "%s %d%%\n", f.style("battery:", ansiCyan), v.Percentage)
 	case timeflip.SystemState:
 		printSystemState(f.out, v, "")
 	case timeflip.TrackerStatus:
@@ -106,38 +114,38 @@ func (f *TextFormatter) PrintReadResult(value any) {
 		if v.CurrentFacetKnown {
 			currentFacet = fmt.Sprintf("%d", v.CurrentFacet)
 		}
-		fmt.Fprintf(f.out, "lock: %v\npause: %v\nautopause_minutes: %d\ncurrent_facet: %s\n", v.LockEnabled, v.PauseEnabled, v.AutoPauseMinutes, currentFacet)
+		writef(f.out, "lock: %v\npause: %v\nautopause_minutes: %d\ncurrent_facet: %s\n", v.LockEnabled, v.PauseEnabled, v.AutoPauseMinutes, currentFacet)
 		if v.CurrentFacetKnown {
-			fmt.Fprintf(f.out, "current_facet_undefined: %v\n", v.CurrentFacetUndefined)
+			writef(f.out, "current_facet_undefined: %v\n", v.CurrentFacetUndefined)
 		}
 	case []timeflip.HistoryEntry:
 		if len(v) == 0 {
-			fmt.Fprintln(f.out, "history: no entries")
+			writeLine(f.out, "history: no entries")
 			return
 		}
 		for _, e := range v {
-			fmt.Fprintf(f.out, "event=%d facet=%d pause=%v undefined=%v accel_error=%v moment=%d duration=%ds previous=%d\n",
+			writef(f.out, "event=%d facet=%d pause=%v undefined=%v accel_error=%v moment=%d duration=%ds previous=%d\n",
 				e.EventNumber, e.Facet, e.Pause, e.UndefinedFacet, e.AccelerometerError, e.MomentUnix, e.DurationSeconds, e.PreviousEventNumber)
 		}
 	case timeflip.TaskParameters:
-		fmt.Fprintf(f.out, "facet: %d\nassigned: %v\n", v.Facet, v.Assigned)
+		writef(f.out, "facet: %d\nassigned: %v\n", v.Facet, v.Assigned)
 		if !v.Assigned {
-			fmt.Fprintln(f.out, "state: unassigned")
+			writeLine(f.out, "state: unassigned")
 			printRawResponse(f.out, v.Raw)
 			return
 		}
-		fmt.Fprintf(f.out, "mode: %d (%s)\npomodoro_seconds: %d\nelapsed_seconds: %d\n",
+		writef(f.out, "mode: %d (%s)\npomodoro_seconds: %d\nelapsed_seconds: %d\n",
 			v.Mode, taskModeLabel(v.Mode), v.PomodoroLimitSeconds, v.ElapsedSeconds)
 	case timeflip.TapSettings:
-		fmt.Fprintf(f.out, "configured: %v\n", v.Configured)
+		writef(f.out, "configured: %v\n", v.Configured)
 		if !v.Configured {
-			fmt.Fprintln(f.out, "state: unassigned")
+			writeLine(f.out, "state: unassigned")
 			printRawResponse(f.out, v.Raw)
 			return
 		}
-		fmt.Fprintf(f.out, "threshold: %d\nlimit: %d\nlatency: %d\nwindow: %d\n", v.Threshold, v.Limit, v.Latency, v.Window)
+		writef(f.out, "threshold: %d\nlimit: %d\nlatency: %d\nwindow: %d\n", v.Threshold, v.Limit, v.Latency, v.Window)
 	default:
-		fmt.Fprintf(f.out, "%+v\n", value)
+		writef(f.out, "%+v\n", value)
 	}
 }
 
@@ -148,16 +156,16 @@ func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult) {
 	if len(payload) == 0 {
 		payload = result.Status.Raw
 	}
-	fmt.Fprintf(f.out, "command: 0x%02X\n", byte(result.Command.Code))
+	writef(f.out, "command: 0x%02X\n", byte(result.Command.Code))
 	if !commandStatusRecognized(payload) {
-		fmt.Fprintln(f.out, "acknowledgement: unexpected")
+		writeLine(f.out, "acknowledgement: unexpected")
 		if len(payload) >= 2 {
-			fmt.Fprintf(f.out, "status_code: 0x%02X\n", payload[1])
+			writef(f.out, "status_code: 0x%02X\n", payload[1])
 		}
-		fmt.Fprintln(f.out, "expected_status: 0x02 OK or 0x01 rejected")
-		fmt.Fprintf(f.out, "payload_bytes: %d\n", len(payload))
+		writeLine(f.out, "expected_status: 0x02 OK or 0x01 rejected")
+		writef(f.out, "payload_bytes: %d\n", len(payload))
 		if len(payload) > 0 {
-			fmt.Fprintf(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
+			writef(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
 		}
 		return
 	}
@@ -165,20 +173,20 @@ func (f *TextFormatter) PrintCommandResult(result timeflip.CommandResult) {
 	if result.Status.OK {
 		acknowledgement = "ok"
 	}
-	fmt.Fprintf(f.out, "acknowledgement: %s\nstatus_code: 0x%02X\npayload_bytes: %d\n",
+	writef(f.out, "acknowledgement: %s\nstatus_code: 0x%02X\npayload_bytes: %d\n",
 		acknowledgement, payload[1], len(payload))
 	if len(payload) > 0 {
-		fmt.Fprintf(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
+		writef(f.out, "raw_payload_hex: %s\n", strings.ToUpper(hex.EncodeToString(payload)))
 	}
 }
 
 func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	fmt.Fprintf(f.out, "\n%s %s\n", f.style("event:", ansiGreen), eventTitle(event.Kind))
-	fmt.Fprintf(f.out, "  device: %s\n", event.DeviceID)
-	fmt.Fprintf(f.out, "  source: %s\n", eventSourceLabel(event))
-	fmt.Fprintf(f.out, "  received: %s\n", event.ReceivedAt.Format("2006-01-02T15:04:05Z07:00"))
+	writef(f.out, "\n%s %s\n", f.style("event:", ansiGreen), eventTitle(event.Kind))
+	writef(f.out, "  device: %s\n", event.DeviceID)
+	writef(f.out, "  source: %s\n", eventSourceLabel(event))
+	writef(f.out, "  received: %s\n", event.ReceivedAt.Format("2006-01-02T15:04:05Z07:00"))
 	switch v := event.Payload.(type) {
 	case timeflip.FacetEvent:
 		status := "valid"
@@ -188,24 +196,24 @@ func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 		if v.WrongPassword {
 			status = "wrong_password_or_locked"
 		}
-		fmt.Fprintf(f.out, "  facet: %d\n  state: %s\n", v.Facet, status)
+		writef(f.out, "  facet: %d\n  state: %s\n", v.Facet, status)
 	case timeflip.DoubleTapEvent:
-		fmt.Fprintf(f.out, "  facet: %d\n  pause_encoded: %v\n", v.Facet, v.Pause)
+		writef(f.out, "  facet: %d\n  pause_encoded: %v\n", v.Facet, v.Pause)
 	case timeflip.BatteryStatus:
-		fmt.Fprintf(f.out, "  battery: %d%%\n", v.Percentage)
+		writef(f.out, "  battery: %d%%\n", v.Percentage)
 	case timeflip.SystemState:
 		printSystemState(f.out, v, "  ")
 	case []timeflip.HistoryEntry:
-		fmt.Fprintf(f.out, "  history_entries: %d\n", len(v))
+		writef(f.out, "  history_entries: %d\n", len(v))
 	case []byte:
-		fmt.Fprintf(f.out, "  payload_bytes: %d\n  payload_hex: %s\n", len(v), strings.ToUpper(hex.EncodeToString(v)))
+		writef(f.out, "  payload_bytes: %d\n  payload_hex: %s\n", len(v), strings.ToUpper(hex.EncodeToString(v)))
 	default:
 		if event.Payload != nil {
-			fmt.Fprintf(f.out, "  payload: %+v\n", event.Payload)
+			writef(f.out, "  payload: %+v\n", event.Payload)
 		}
 	}
 	if len(event.Raw) > 0 {
-		fmt.Fprintf(f.out, "  raw_hex: %s\n", strings.ToUpper(hex.EncodeToString(event.Raw)))
+		writef(f.out, "  raw_hex: %s\n", strings.ToUpper(hex.EncodeToString(event.Raw)))
 	}
 }
 
@@ -222,79 +230,79 @@ func (f *TextFormatter) PrintError(err error) {
 			if source == "" {
 				source = "unknown"
 			}
-			fmt.Fprintf(f.err, "%s could not decode %s notification from device %s; streaming continues.\n", f.style("stream warning:", ansiYellow), source, opErr.DeviceID)
-			fmt.Fprintf(f.err, "  detail: %v\n", opErr.Err)
+			writef(f.err, "%s could not decode %s notification from device %s; streaming continues.\n", f.style("stream warning:", ansiYellow), source, opErr.DeviceID)
+			writef(f.err, "  detail: %v\n", opErr.Err)
 			return
 		}
 		if opErr.Operation == "send_command" && errors.Is(err, timeflip.ErrProtocol) {
-			fmt.Fprintf(f.err, "%s device returned an unexpected acknowledgement", f.style("command error:", ansiRed))
+			writef(f.err, "%s device returned an unexpected acknowledgement", f.style("command error:", ansiRed))
 			if opErr.DeviceID != "" {
-				fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+				writef(f.err, " from %s", opErr.DeviceID)
 			}
 			if opErr.Command != 0 {
-				fmt.Fprintf(f.err, " for command 0x%02X", byte(opErr.Command))
+				writef(f.err, " for command 0x%02X", byte(opErr.Command))
 			}
-			fmt.Fprintln(f.err, ".")
-			fmt.Fprintln(f.err, "  expected: command result status 0x02 (OK) or 0x01 (rejected)")
-			fmt.Fprintln(f.err, "  meaning: the command reached the device, but its acknowledgement was not one this library can treat as success")
-			fmt.Fprintf(f.err, "  detail: %v\n", opErr.Err)
+			writeLine(f.err, ".")
+			writeLine(f.err, "  expected: command result status 0x02 (OK) or 0x01 (rejected)")
+			writeLine(f.err, "  meaning: the command reached the device, but its acknowledgement was not one this library can treat as success")
+			writef(f.err, "  detail: %v\n", opErr.Err)
 			if byte(opErr.Command) == 0x15 {
-				fmt.Fprintln(f.err, "  name note: device names must be 1-18 ASCII characters; if the name already fits, try authorize, read system, then retry with a simple test name")
+				writeLine(f.err, "  name note: device names must be 1-18 ASCII characters; if the name already fits, try authorize, read system, then retry with a simple test name")
 			} else {
-				fmt.Fprintln(f.err, "  next: check authorization/lock state with read system, then retry the command")
+				writeLine(f.err, "  next: check authorization/lock state with read system, then retry the command")
 			}
 			return
 		}
 		if (opErr.Operation == "send_command" || isCommandBackedRead(opErr.Operation)) && errors.Is(err, timeflip.ErrAuthorizationFailed) {
-			fmt.Fprintf(f.err, "%s device is not accepting commands", f.style("authorization error:", ansiRed))
+			writef(f.err, "%s device is not accepting commands", f.style("authorization error:", ansiRed))
 			if opErr.DeviceID != "" {
-				fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+				writef(f.err, " from %s", opErr.DeviceID)
 			}
 			if opErr.Command != 0 {
-				fmt.Fprintf(f.err, " for command 0x%02X", byte(opErr.Command))
+				writef(f.err, " for command 0x%02X", byte(opErr.Command))
 			}
-			fmt.Fprintln(f.err, ".")
-			fmt.Fprintln(f.err, "  device_response: password check failed (0x01)")
-			fmt.Fprintln(f.err, "  meaning: the command was sent while the device still considers this session unauthorized")
-			fmt.Fprintln(f.err, "  next: run authorize with the current six-character password; if the device was factory reset, try 000000 and confirm the reset really completed")
+			writeLine(f.err, ".")
+			writeLine(f.err, "  device_response: password check failed (0x01)")
+			writeLine(f.err, "  meaning: the command was sent while the device still considers this session unauthorized")
+			writeLine(f.err, "  next: run authorize with the current six-character password; if the device was factory reset, try 000000 and confirm the reset really completed")
 			return
 		}
 		if isCommandBackedRead(opErr.Operation) && errors.Is(err, timeflip.ErrProtocol) {
 			var payloadErr *timeflip.ProtocolPayloadError
 			if errors.As(err, &payloadErr) && strings.Contains(payloadErr.Expected, "command result beginning") {
-				fmt.Fprintf(f.err, "%s no response for command 0x%02X", f.style("read warning:", ansiYellow), byte(opErr.Command))
+				writef(f.err, "%s no response for command 0x%02X", f.style("read warning:", ansiYellow), byte(opErr.Command))
 				if opErr.DeviceID != "" {
-					fmt.Fprintf(f.err, " from %s", opErr.DeviceID)
+					writef(f.err, " from %s", opErr.DeviceID)
 				}
-				fmt.Fprintln(f.err, ".")
+				writeLine(f.err, ".")
 				if len(payloadErr.Payload) > 0 {
-					fmt.Fprintf(f.err, "  last_command_result: 0x%s\n", strings.ToUpper(hex.EncodeToString(payloadErr.Payload)))
+					writef(f.err, "  last_command_result: 0x%s\n", strings.ToUpper(hex.EncodeToString(payloadErr.Payload)))
 				}
-				fmt.Fprintln(f.err, "  meaning: the command-result characteristic did not change to the response for the command just sent before the timeout")
-				fmt.Fprintln(f.err, "  next: try authorize, read system, then retry; if this persists, this firmware may not support this read command")
+				writeLine(f.err, "  meaning: the command-result characteristic did not change to the response for the command just sent before the timeout")
+				writeLine(f.err, "  next: try authorize, read system, then retry; if this persists, this firmware may not support this read command")
 				return
 			}
 		}
-		fmt.Fprintf(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
+		writef(f.err, "%s operation=%s", f.style("error:", ansiRed), opErr.Operation)
 		if opErr.Stage != "" {
-			fmt.Fprintf(f.err, " stage=%s", opErr.Stage)
+			writef(f.err, " stage=%s", opErr.Stage)
 		}
 		if opErr.DeviceID != "" {
-			fmt.Fprintf(f.err, " device=%s", opErr.DeviceID)
+			writef(f.err, " device=%s", opErr.DeviceID)
 		}
 		if opErr.Command != 0 {
-			fmt.Fprintf(f.err, " command=0x%02X", byte(opErr.Command))
+			writef(f.err, " command=0x%02X", byte(opErr.Command))
 		}
 		if opErr.Err != nil {
-			fmt.Fprintf(f.err, ": %v", opErr.Err)
+			writef(f.err, ": %v", opErr.Err)
 		}
-		fmt.Fprintln(f.err)
+		writeLine(f.err)
 		if timeflip.IsUnsupported(err) {
-			fmt.Fprintln(f.err, "adapter note: this operation may require a concrete MacOS BLE adapter or manual OS action.")
+			writeLine(f.err, "adapter note: this operation may require a concrete MacOS BLE adapter or manual OS action.")
 		}
 		return
 	}
-	fmt.Fprintf(f.err, "%s %v\n", f.style("error:", ansiRed), err)
+	writef(f.err, "%s %v\n", f.style("error:", ansiRed), err)
 }
 
 func isCommandBackedRead(operation string) bool {
@@ -307,26 +315,26 @@ func isCommandBackedRead(operation string) bool {
 }
 
 func printSystemState(out io.Writer, state timeflip.SystemState, prefix string) {
-	fmt.Fprintf(out, "%sstatus_code: 0x%04X\n", prefix, state.StatusCode)
+	writef(out, "%sstatus_code: 0x%04X\n", prefix, state.StatusCode)
 	if state.StatusDescription != "" {
-		fmt.Fprintf(out, "%sstatus: %s\n", prefix, state.StatusDescription)
+		writef(out, "%sstatus: %s\n", prefix, state.StatusDescription)
 	}
-	fmt.Fprintf(out, "%shardware_code: 0x%04X\n", prefix, state.HardwareCode)
+	writef(out, "%shardware_code: 0x%04X\n", prefix, state.HardwareCode)
 	if state.HardwareDescription != "" {
-		fmt.Fprintf(out, "%shardware: %s\n", prefix, state.HardwareDescription)
+		writef(out, "%shardware: %s\n", prefix, state.HardwareDescription)
 	}
-	fmt.Fprintf(out, "%ssync_required: %v\n", prefix, state.SyncRequired)
+	writef(out, "%ssync_required: %v\n", prefix, state.SyncRequired)
 	if state.SyncRequired {
-		fmt.Fprintf(out, "%ssync_reason: %s\n", prefix, systemSyncReasonLabel(state.SyncReason))
+		writef(out, "%ssync_reason: %s\n", prefix, systemSyncReasonLabel(state.SyncReason))
 		actions := systemSyncActions(state.SyncReason)
 		if len(actions) > 0 {
-			fmt.Fprintf(out, "%ssync_actions:\n", prefix)
+			writef(out, "%ssync_actions:\n", prefix)
 			for _, action := range actions {
-				fmt.Fprintf(out, "%s  %s\n", prefix, action)
+				writef(out, "%s  %s\n", prefix, action)
 			}
 		}
 	}
-	fmt.Fprintf(out, "%sreset: %v\n%shardware_issue: %v\n", prefix, state.Reset, prefix, state.HardwareIssue)
+	writef(out, "%sreset: %v\n%shardware_issue: %v\n", prefix, state.Reset, prefix, state.HardwareIssue)
 }
 
 func systemSyncReasonLabel(reason string) string {
@@ -386,7 +394,7 @@ func printRawResponse(out io.Writer, payload []byte) {
 	if len(payload) == 0 {
 		return
 	}
-	fmt.Fprintf(out, "raw_response: 0x%s\n", strings.ToUpper(hex.EncodeToString(payload)))
+	writef(out, "raw_response: 0x%s\n", strings.ToUpper(hex.EncodeToString(payload)))
 }
 
 func commandStatusRecognized(payload []byte) bool {
@@ -428,12 +436,12 @@ func (f *TextFormatter) PrintSuggestions(commands []string) {
 	if len(commands) == 0 {
 		return
 	}
-	fmt.Fprintln(f.out, f.style("next:", ansiCyan))
+	writeLine(f.out, f.style("next:", ansiCyan))
 	for _, command := range commands {
 		if strings.TrimSpace(command) == "" {
 			continue
 		}
-		fmt.Fprintf(f.out, "  %s\n", f.style(command, ansiBold))
+		writef(f.out, "  %s\n", f.style(command, ansiBold))
 	}
 }
 
@@ -457,7 +465,7 @@ func printManualAction(w io.Writer, action *timeflip.ManualAction) {
 	if action == nil {
 		return
 	}
-	fmt.Fprintf(w, "manual action: %s\n", action.Kind)
+	writef(w, "manual action: %s\n", action.Kind)
 	printManualActionSteps(w, action)
 	if len(action.Inputs) > 0 {
 		keys := make([]string, 0, len(action.Inputs))
@@ -466,7 +474,7 @@ func printManualAction(w io.Writer, action *timeflip.ManualAction) {
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
-			fmt.Fprintf(w, "  %s=%s\n", k, action.Inputs[k])
+			writef(w, "  %s=%s\n", k, action.Inputs[k])
 		}
 	}
 }
@@ -476,13 +484,13 @@ func printManualActionSteps(w io.Writer, action *timeflip.ManualAction) {
 	if len(steps) == 0 && action.Description != "" {
 		for _, line := range strings.Split(action.Description, "\n") {
 			if strings.TrimSpace(line) != "" {
-				fmt.Fprintf(w, "  %s\n", strings.TrimSpace(line))
+				writef(w, "  %s\n", strings.TrimSpace(line))
 			}
 		}
 		return
 	}
 	for i, step := range steps {
-		fmt.Fprintf(w, "  %d. %s\n", i+1, step)
+		writef(w, "  %d. %s\n", i+1, step)
 	}
 }
 

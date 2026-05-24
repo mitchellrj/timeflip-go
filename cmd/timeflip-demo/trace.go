@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"sync"
 	"time"
@@ -112,18 +111,18 @@ func (l *traceLogger) event(name string, deviceID timeflip.DeviceID, characteris
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	fmt.Fprintf(l.out, "time=%s event=%s", time.Now().Format(time.RFC3339Nano), name)
+	writef(l.out, "time=%s event=%s", time.Now().Format(time.RFC3339Nano), name)
 	if deviceID != "" {
-		fmt.Fprintf(l.out, " device=%s", deviceID)
+		writef(l.out, " device=%s", deviceID)
 	}
 	if characteristic != "" {
-		fmt.Fprintf(l.out, " characteristic=%s", characteristic)
+		writef(l.out, " characteristic=%s", characteristic)
 	}
 	if payload != nil {
-		fmt.Fprintf(l.out, " bytes=%d hex=0x%X", len(payload), payload)
+		writef(l.out, " bytes=%d hex=0x%X", len(payload), payload)
 	}
 	if err != nil {
-		fmt.Fprintf(l.out, " error=%q", err)
+		writef(l.out, " error=%q", err)
 	}
-	fmt.Fprintln(l.out)
+	writeLine(l.out)
 }

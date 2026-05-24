@@ -45,11 +45,15 @@ func (e *lineEditor) ReadLine(prompt string, addHistory bool, echo bool) (string
 		switch b := buf[0]; b {
 		case 3, 4:
 			if len(line) == 0 {
-				fmt.Fprint(e.out, "\r\n")
+				if _, err := fmt.Fprint(e.out, "\r\n"); err != nil {
+					return "", err
+				}
 				return "", io.EOF
 			}
 		case '\r', '\n':
-			fmt.Fprint(e.out, "\r\n")
+			if _, err := fmt.Fprint(e.out, "\r\n"); err != nil {
+				return "", err
+			}
 			value := strings.TrimSpace(string(line))
 			if addHistory && value != "" && (len(e.history) == 0 || e.history[len(e.history)-1] != value) {
 				e.history = append(e.history, value)
@@ -140,8 +144,8 @@ func (e *lineEditor) redraw(prompt string, line []rune, pos int, echo bool) {
 	if !echo {
 		display = strings.Repeat("*", len(line))
 	}
-	fmt.Fprintf(e.out, "\r\033[2K%s%s", prompt, display)
+	writef(e.out, "\r\033[2K%s%s", prompt, display)
 	if back := len(line) - pos; back > 0 {
-		fmt.Fprintf(e.out, "\033[%dD", back)
+		writef(e.out, "\033[%dD", back)
 	}
 }
