@@ -1,18 +1,26 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
 
 linters:
+  default: none
   enable:
     - errcheck
-    - gofmt
-    - goimports
     - govet
     - ineffassign
     - misspell
     - staticcheck
     - unused
+  exclusions:
+    paths:
+      - build
 
-issues:
-  exclude-dirs:
-    - build
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    paths:
+      - build

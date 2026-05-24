@@ -99,7 +99,7 @@ QualityGate "0..N" --> "1" GoModule : validates
 1. Local Quality Baseline:
    - Replace the current drifted `.pre-commit-config.yaml` with Go-specific hooks and retain only generic file hygiene hooks that apply to this repository.
    - Add executable scripts under `scripts/dev/` so pre-commit and GitHub Actions can share the same quality commands without duplicating shell logic.
-   - Keep pre-commit fast enough for normal development: formatting, module tidy verification, vet, tests, and a pinned `golangci-lint` hook that matches CI.
+   - Keep pre-commit fast enough for normal development: formatting, module tidy verification, vet, tests, and a pinned `golangci-lint` v2 hook that matches CI.
 
 2. GitHub Actions CI:
    - Create `.github/workflows/ci.yml` for pull requests and pushes to mainline branches.
@@ -108,8 +108,8 @@ QualityGate "0..N" --> "1" GoModule : validates
    - Use least-privilege permissions (`contents: read`) for CI and avoid release permissions outside the release workflow.
 
 3. Static Quality and Security Assessment:
-   - Add `.golangci.yml` with conservative linters that should suit this small library: `govet`, `staticcheck`, `ineffassign`, `unused`, `errcheck`, `misspell`, `gofmt`, and `goimports` if available through the selected `golangci-lint` version.
-   - Configure CI to run `golangci/golangci-lint-action` with an explicit version compatible with Go 1.23.x.
+   - Add `.golangci.yml` v2 config with conservative linters that should suit this small library: `govet`, `staticcheck`, `ineffassign`, `unused`, `errcheck`, `misspell`, plus `gofmt` and `goimports` under the v2 `formatters` section.
+   - Configure CI to run `golangci/golangci-lint-action@v7` with an explicit golangci-lint v2 version compatible with Go 1.23.x.
    - Configure `govulncheck` through `golang/govulncheck-action` so dependency and standard-library vulnerabilities fail CI before release.
    - Add an OpenSSF Scorecard workflow that publishes results for the public Scorecard badge and uploads SARIF to GitHub code scanning.
    - Add Dependabot version update coverage for Go modules, GitHub Actions, and pre-commit hook revisions.
@@ -238,7 +238,9 @@ QualityGate "0..N" --> "1" GoModule : validates
    - `.golangci.yml`
 3. Configuration:
    - Set an explicit timeout such as `5m`.
-   - Enable conservative linters: `govet`, `staticcheck`, `ineffassign`, `unused`, `errcheck`, `misspell`, `gofmt`, and `goimports` when supported.
+   - Use config `version: "2"`.
+   - Enable conservative linters: `govet`, `staticcheck`, `ineffassign`, `unused`, `errcheck`, and `misspell`.
+   - Enable `gofmt` and `goimports` through the v2 `formatters` section.
    - Exclude generated or build directories if needed: `build/`.
    - Avoid aggressive style linters that would force unrelated refactors, such as `gocyclo`, `revive`, or `wrapcheck`, unless added with targeted exclusions.
 4. Completion Criteria:
