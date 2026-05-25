@@ -19,6 +19,10 @@ type writeResult struct {
 	err error
 }
 
+type closeResult struct {
+	err error
+}
+
 type discoverResult struct {
 	err error
 }
@@ -133,8 +137,8 @@ func (c *Connection) Subscribe(ctx context.Context, ch timeflip.CharacteristicID
 		ch:     ch,
 		out:    make(chan timeflip.Notification, 8),
 		cancel: cancel,
-		disable: func() {
-			_ = enableNotifications(context.Background(), characteristic, nil)
+		disable: func(disableCtx context.Context) error {
+			return enableNotifications(disableCtx, characteristic, nil)
 		},
 	}
 	if err := enableNotifications(ctx, characteristic, func(payload []byte) {
@@ -167,7 +171,7 @@ func (c *Connection) Subscribe(ctx context.Context, ch timeflip.CharacteristicID
 }
 
 // Close disconnects from the BLE peripheral and closes active subscriptions.
-func (c *Connection) Close(context.Context) error {
+func (c *Connection) Close(ctx context.Context) error {
 	var err error
 	c.closeOnce.Do(func() {
 		c.mu.Lock()
@@ -185,12 +189,22 @@ func (c *Connection) Close(context.Context) error {
 		c.mu.Unlock()
 
 		for _, sub := range subs {
-			sub.close()
+			if closeErr := sub.closeWithContext(ctx); closeErr != nil && err == nil {
+				err = operationErr("macos_close", c.deviceID, closeErr)
+			}
 		}
-		if connected {
-			err = c.device.Disconnect()
-			if err != nil {
-				err = operationErr("macos_close", c.deviceID, err)
+		if connected && err == nil {
+			result := make(chan closeResult, 1)
+			go func() {
+				result <- closeResult{err: c.device.Disconnect()}
+			}()
+			select {
+			case <-ctx.Done():
+				err = operationErr("macos_close", c.deviceID, ctx.Err())
+			case res := <-result:
+				if res.err != nil {
+					err = operationErr("macos_close", c.deviceID, res.err)
+				}
 			}
 		}
 	})
@@ -238,7 +252,7 @@ type subscription struct {
 	ch      timeflip.CharacteristicID
 	out     chan timeflip.Notification
 	cancel  context.CancelFunc
-	disable func()
+	disable func(context.Context) error
 	closed  bool
 }
 
@@ -259,17 +273,23 @@ func (s *subscription) deliver(payload []byte) {
 }
 
 func (s *subscription) close() {
+	_ = s.closeWithContext(context.Background())
+}
+
+func (s *subscription) closeWithContext(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed {
-		return
+		return nil
 	}
 	s.closed = true
 	if s.cancel != nil {
 		s.cancel()
 	}
+	var err error
 	if s.disable != nil {
-		s.disable()
+		err = s.disable(ctx)
 	}
 	close(s.out)
+	return err
 }

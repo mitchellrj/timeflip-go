@@ -19,6 +19,7 @@ type Session struct {
 	conn                 Connection
 	defaultTimeout       time.Duration
 	protocol             ProtocolVersion
+	opMu                 sync.Mutex
 	closeOnce            sync.Once
 	done                 chan struct{}
 }
@@ -232,6 +233,12 @@ func (s *Session) ReadTrackerStatus(ctx context.Context, opts CommandOptions) (T
 
 // ReadHistory reads device history entries.
 func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.readHistory(ctx, req)
+}
+
+func (s *Session) readHistory(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error) {
 	if s.protocol == ProtocolV3 {
 		return s.readHistoryV3(ctx, req)
 	}
@@ -543,8 +550,10 @@ func (s *Session) Events(ctx context.Context, opts EventOptions) (<-chan Event, 
 	if opts.Buffer < 0 {
 		return nil, nil, &OperationError{Operation: "events", DeviceID: s.deviceID, Err: ErrInvalidInput}
 	}
-	subs := []CharacteristicID{charFacets, charDoubleTap, charBattery, charSystemState, charEvents, charHistory}
+	subs := eventSubscriptionCharacteristics(opts)
 	streams := make([]<-chan Notification, 0, len(subs))
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
 	for _, ch := range subs {
 		stream, err := s.conn.Subscribe(ctx, ch)
 		if err != nil {
@@ -597,6 +606,14 @@ func (s *Session) Events(ctx context.Context, opts EventOptions) (<-chan Event, 
 		close(errs)
 	}()
 	return events, errs, nil
+}
+
+func eventSubscriptionCharacteristics(opts EventOptions) []CharacteristicID {
+	subs := []CharacteristicID{charFacets, charDoubleTap, charBattery, charSystemState, charEvents}
+	if opts.IncludeHistory {
+		subs = append(subs, charHistory)
+	}
+	return subs
 }
 
 func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, error) {
