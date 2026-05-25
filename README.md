@@ -123,7 +123,7 @@ pre-commit run --all-files
 
 The local hooks check Go formatting, module tidiness, `go vet`, tests, and the same pinned `golangci-lint` v2 version used in CI.
 
-GitHub Actions runs the same Go quality script on Ubuntu and macOS, runs race tests on Ubuntu, uploads coverage, runs `golangci-lint`, and runs `govulncheck` for dependency and standard-library vulnerability checks.
+GitHub Actions runs the same Go quality script on Ubuntu and macOS, runs race tests on Ubuntu, uploads coverage, runs `golangci-lint`, runs `govulncheck`, and analyzes Go plus GitHub Actions workflows with CodeQL.
 
 Dependabot checks Go modules, GitHub Actions, and pre-commit hook revisions weekly.
 
