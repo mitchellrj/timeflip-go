@@ -37,3 +37,25 @@ func TestConnectionCloseIsIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestConnectionCloseReturnsContextErrorFromSubscriptionShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	conn := &Connection{
+		deviceID:        "tf",
+		characteristics: map[timeflip.CharacteristicID]bluetooth.DeviceCharacteristic{},
+		subscriptions: map[timeflip.CharacteristicID]*subscription{
+			"ch": {
+				out: make(chan timeflip.Notification),
+				disable: func(ctx context.Context) error {
+					return ctx.Err()
+				},
+			},
+		},
+		done: make(chan struct{}),
+	}
+	err := conn.Close(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context cancellation, got %v", err)
+	}
+}

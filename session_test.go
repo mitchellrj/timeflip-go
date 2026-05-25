@@ -645,6 +645,49 @@ func TestEventsDecodeAndCloseOnCancel(t *testing.T) {
 	}
 }
 
+func TestEventsDefaultLeavesHistoryAvailableForReadHistory(t *testing.T) {
+	history := make([]byte, 17)
+	history[4] = 3
+	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
+		charHistory: history,
+	}}
+	session := newTestSession(t, conn)
+	session.protocol = ProtocolV4
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, _, err := session.Events(ctx, EventOptions{Buffer: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := conn.subscriptions[charHistory]; ok {
+		t.Fatal("history characteristic should not be subscribed by default")
+	}
+	entries, err := session.ReadHistory(context.Background(), HistoryRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Facet != 3 {
+		t.Fatalf("unexpected history entries: %+v", entries)
+	}
+	if len(conn.writes) != 1 || conn.writes[0].characteristic != charHistory {
+		t.Fatalf("expected history read write, got %+v", conn.writes)
+	}
+}
+
+func TestEventsCanOptIntoHistoryNotifications(t *testing.T) {
+	conn := &fakeConnection{}
+	session := newTestSession(t, conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	_, _, err := session.Events(ctx, EventOptions{Buffer: 1, IncludeHistory: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := conn.subscriptions[charHistory]; !ok {
+		t.Fatal("history characteristic was not subscribed with IncludeHistory")
+	}
+}
+
 func TestEventsIncludeRawPreservesTypedEventRaw(t *testing.T) {
 	conn := &fakeConnection{}
 	session := newTestSession(t, conn)

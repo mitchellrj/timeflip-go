@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"sync"
 	"time"
@@ -64,6 +65,10 @@ type tracingConnection struct {
 func (c *tracingConnection) Read(ctx context.Context, ch timeflip.CharacteristicID) ([]byte, error) {
 	c.log.event("read", c.deviceID, ch, nil, nil)
 	payload, err := c.inner.Read(ctx, ch)
+	if expectedOptionalCharacteristicMiss(ch, err) {
+		c.log.event("read_optional_miss", c.deviceID, ch, nil, nil)
+		return payload, err
+	}
 	c.log.event("read_result", c.deviceID, ch, payload, err)
 	return payload, err
 }
@@ -125,4 +130,8 @@ func (l *traceLogger) event(name string, deviceID timeflip.DeviceID, characteris
 		writef(l.out, " error=%q", err)
 	}
 	writeLine(l.out)
+}
+
+func expectedOptionalCharacteristicMiss(ch timeflip.CharacteristicID, err error) bool {
+	return err != nil && errors.Is(err, timeflip.ErrProtocol) && ch == "0x2A00"
 }

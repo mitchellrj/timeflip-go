@@ -65,6 +65,8 @@ For v3 devices, the friendly device name is not exposed through the documented r
 
 Events are technical device events delivered through Go channels. The library does not interpret a facet as a task, stop/start time tracking, or perform business decisions for consuming applications.
 
+By default `Events` subscribes to live facet, double-tap, battery, system-state, and TimeFlip event notifications, but leaves the history data characteristic free for explicit `ReadHistory` calls on the same session. Set `EventOptions.IncludeHistory` when an application intentionally wants history notifications in the event stream.
+
 ## Interactive Demo
 
 Run the demo CLI with:

@@ -63,6 +63,28 @@ func TestTracingTransportLogsRawOperations(t *testing.T) {
 	}
 }
 
+func TestTracingTransportSoftLogsExpectedOptionalCharacteristicMisses(t *testing.T) {
+	conn := &fakeDemoConnection{readErrs: map[timeflip.CharacteristicID]error{
+		protocol.DeviceNameCharacteristic: timeflip.ErrProtocol,
+	}}
+	var trace bytes.Buffer
+	transport := NewTracingTransport(&fakeDemoTransport{connections: map[timeflip.DeviceID]*fakeDemoConnection{"tf": conn}}, &trace)
+	wrapped, err := transport.Connect(context.Background(), "tf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := wrapped.Read(context.Background(), protocol.DeviceNameCharacteristic); !errors.Is(err, timeflip.ErrProtocol) {
+		t.Fatalf("expected protocol error, got %v", err)
+	}
+	output := trace.String()
+	if !strings.Contains(output, "event=read_optional_miss device=tf characteristic=0x2A00") {
+		t.Fatalf("missing optional miss trace: %q", output)
+	}
+	if strings.Contains(output, "event=read_result device=tf characteristic=0x2A00") {
+		t.Fatalf("optional miss should not be logged as a noisy read_result: %q", output)
+	}
+}
+
 func TestSplitArgs(t *testing.T) {
 	got, err := splitArgs(`write name "Desk Timer"`)
 	if err != nil {

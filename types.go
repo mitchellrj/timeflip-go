@@ -49,8 +49,12 @@ type CommandOptions struct {
 
 // EventOptions configures event streaming.
 type EventOptions struct {
-	Buffer     int
+	// Buffer sets the event channel buffer size.
+	Buffer int
+	// IncludeRaw preserves raw bytes on typed events.
 	IncludeRaw bool
+	// IncludeHistory subscribes to history notifications. It is off by default so ReadHistory can use the history characteristic on the same session.
+	IncludeHistory bool
 }
 
 // ScanFilter configures BLE discovery.
