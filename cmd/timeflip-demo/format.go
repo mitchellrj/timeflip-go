@@ -203,6 +203,8 @@ func (f *TextFormatter) PrintEvent(event timeflip.Event) {
 		writef(f.out, "  battery: %d%%\n", v.Percentage)
 	case timeflip.SystemState:
 		printSystemState(f.out, v, "  ")
+	case timeflip.PauseStateEvent:
+		writef(f.out, "  paused: %v\n", v.Paused)
 	case []timeflip.HistoryEntry:
 		writef(f.out, "  history_entries: %d\n", len(v))
 	case []byte:
@@ -414,6 +416,8 @@ func eventTitle(kind timeflip.EventKind) string {
 		return "battery update"
 	case timeflip.EventSystemState:
 		return "system state update"
+	case timeflip.EventPauseState:
+		return "pause state update"
 	case timeflip.EventHistory:
 		return "history update"
 	case timeflip.EventRaw:

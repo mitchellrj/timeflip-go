@@ -422,6 +422,12 @@ func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (Tap
 }
 
 func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts CommandOptions, operation string, accept func([]byte) bool) ([]byte, error) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.readCommandPayloadLocked(ctx, cmd, opts, operation, accept)
+}
+
+func (s *Session) readCommandPayloadLocked(ctx context.Context, cmd Command, opts CommandOptions, operation string, accept func([]byte) bool) ([]byte, error) {
 	encoded, err := encodeCommand(cmd)
 	if err != nil {
 		return nil, &OperationError{Operation: operation, DeviceID: s.deviceID, Command: cmd.Code, Err: ErrInvalidInput}
@@ -447,6 +453,12 @@ func (s *Session) readCommandPayload(ctx context.Context, cmd Command, opts Comm
 
 // SendCommand writes a supported command and reads the command result.
 func (s *Session) SendCommand(ctx context.Context, cmd Command, opts CommandOptions) (CommandResult, error) {
+	s.opMu.Lock()
+	defer s.opMu.Unlock()
+	return s.sendCommandLocked(ctx, cmd, opts)
+}
+
+func (s *Session) sendCommandLocked(ctx context.Context, cmd Command, opts CommandOptions) (CommandResult, error) {
 	encoded, err := encodeCommand(cmd)
 	if err != nil {
 		return CommandResult{}, &OperationError{Operation: "send_command", DeviceID: s.deviceID, Command: cmd.Code, Err: ErrInvalidInput}
@@ -752,6 +764,13 @@ func (s *Session) decodeNotification(n Notification, includeRaw bool) (Event, er
 
 func decodeTimeFlipTextEvent(payload []byte, includeRaw bool) (EventKind, any, bool) {
 	text := cleanString(payload)
+	if paused, ok := parsePauseStateEventText(text); ok {
+		var raw []byte
+		if includeRaw {
+			raw = append([]byte(nil), payload...)
+		}
+		return EventPauseState, PauseStateEvent{Paused: paused, Raw: raw}, true
+	}
 	side, tap, ok := parseSideEventText(text)
 	if !ok {
 		return "", nil, false
@@ -768,6 +787,18 @@ func decodeTimeFlipTextEvent(payload []byte, includeRaw bool) (EventKind, any, b
 		return EventDoubleTap, DoubleTapEvent{Facet: FacetID(side), Pause: pause, Raw: raw}, true
 	}
 	return EventFacet, FacetEvent{Facet: FacetID(side), Undefined: side == 0, WrongPassword: side == 0, Raw: raw}, true
+}
+
+func parsePauseStateEventText(text string) (paused bool, ok bool) {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	switch normalized {
+	case "pause on", "pause: on":
+		return true, true
+	case "pause off", "pause: off":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func parseSideEventText(text string) (side uint64, tap bool, ok bool) {
@@ -813,6 +844,8 @@ func NotificationSourceName(ch CharacteristicID) string {
 		return "system_state"
 	case charEvents:
 		return "timeflip_events"
+	case charCommandResult:
+		return "command_result"
 	case charHistory:
 		return "history"
 	default:
