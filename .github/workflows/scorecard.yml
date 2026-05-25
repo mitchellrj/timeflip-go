@@ -1,6 +1,10 @@
 name: OpenSSF Scorecard
 
 on:
+  pull_request:
+    branches:
+      - main
+      - master
   schedule:
     - cron: "31 4 * * 1"
   push:
@@ -30,7 +34,7 @@ jobs:
         with:
           results_file: results.sarif
           results_format: sarif
-          publish_results: true
+          publish_results: ${{ github.event_name != 'pull_request' }}
 
       - name: Upload Scorecard SARIF
         uses: github/codeql-action/upload-sarif@v4
