@@ -446,6 +446,101 @@ func TestReadSystemStateUnsupportedForV3(t *testing.T) {
 	}
 }
 
+func TestReadAccelerometerUsesV3AccelerometerCharacteristic(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charEvents: {0x00, 0x10, 0xFF, 0xF0, 0x01, 0x00},
+	}})
+	session.protocol = ProtocolV3
+	sample, err := session.ReadAccelerometer(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sample.X != 16 || sample.Y != -16 || sample.Z != 256 || string(sample.Raw) != string([]byte{0x00, 0x10, 0xFF, 0xF0, 0x01, 0x00}) || sample.ReadAt.IsZero() {
+		t.Fatalf("unexpected accelerometer sample: %+v", sample)
+	}
+}
+
+func TestReadAccelerometerClassifiesSuccessfulAutoReadAsV3(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{reads: map[CharacteristicID][]byte{
+		charEvents: {0x00, 0x01, 0x00, 0x02, 0x00, 0x03},
+	}})
+	sample, err := session.ReadAccelerometer(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sample.X != 1 || sample.Y != 2 || sample.Z != 3 {
+		t.Fatalf("unexpected accelerometer sample: %+v", sample)
+	}
+	if session.protocol != ProtocolV3 {
+		t.Fatalf("expected protocol to be classified as v3, got %q", session.protocol)
+	}
+}
+
+func TestReadAccelerometerUnsupportedForV4(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	session.protocol = ProtocolV4
+	_, err := session.ReadAccelerometer(context.Background())
+	if !errors.Is(err, ErrUnsupportedOperation) {
+		t.Fatalf("expected unsupported operation, got %v", err)
+	}
+}
+
+func TestAccelerometerSamplesPollsUntilCanceled(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{readSeq: map[CharacteristicID][][]byte{
+		charEvents: {
+			{0x00, 0x01, 0x00, 0x02, 0x00, 0x03},
+		},
+	}})
+	session.protocol = ProtocolV3
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	samples, errs, err := session.AccelerometerSamples(ctx, AccelerometerOptions{Buffer: 1, Interval: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case sample := <-samples:
+		if sample.X != 1 || sample.Y != 2 || sample.Z != 3 {
+			t.Fatalf("unexpected accelerometer sample: %+v", sample)
+		}
+	case err := <-errs:
+		t.Fatalf("unexpected accelerometer stream error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for accelerometer sample")
+	}
+	cancel()
+	select {
+	case _, ok := <-samples:
+		if ok {
+			t.Fatal("samples channel still open")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for accelerometer stream close")
+	}
+}
+
+func TestAccelerometerSamplesRejectsInvalidOptions(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	session.protocol = ProtocolV3
+	_, _, err := session.AccelerometerSamples(context.Background(), AccelerometerOptions{Buffer: -1})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got %v", err)
+	}
+	_, _, err = session.AccelerometerSamples(context.Background(), AccelerometerOptions{Interval: -time.Millisecond})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("expected invalid input, got %v", err)
+	}
+}
+
+func TestAccelerometerSamplesUnsupportedForV4(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	session.protocol = ProtocolV4
+	_, _, err := session.AccelerometerSamples(context.Background(), AccelerometerOptions{})
+	if !errors.Is(err, ErrUnsupportedOperation) {
+		t.Fatalf("expected unsupported operation, got %v", err)
+	}
+}
+
 func TestReadTrackerStatusUsesCommandOutput(t *testing.T) {
 	conn := &fakeConnection{reads: map[CharacteristicID][]byte{
 		charCommand:       {byte(cmdStatus), 0x02},

@@ -161,6 +161,18 @@ func decodeSystemState(payload []byte) (SystemState, error) {
 	}, nil
 }
 
+func decodeAccelerometer(payload []byte) (AccelerometerSample, error) {
+	if len(payload) != 6 {
+		return AccelerometerSample{}, ErrProtocol
+	}
+	return AccelerometerSample{
+		X:   int16(binary.BigEndian.Uint16(payload[0:2])),
+		Y:   int16(binary.BigEndian.Uint16(payload[2:4])),
+		Z:   int16(binary.BigEndian.Uint16(payload[4:6])),
+		Raw: append([]byte(nil), payload...),
+	}, nil
+}
+
 func systemStatusDescription(status uint16) (description string, syncReason string) {
 	switch status {
 	case 0x0000:

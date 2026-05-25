@@ -67,6 +67,10 @@ Events are technical device events delivered through Go channels. The library do
 
 By default `Events` subscribes to live facet, double-tap, battery, system-state, and TimeFlip event notifications, but leaves the history data characteristic free for explicit `ReadHistory` calls on the same session. Set `EventOptions.IncludeHistory` when an application intentionally wants history notifications in the event stream.
 
+## Accelerometer Samples
+
+Protocol v3 devices expose a readable raw accelerometer vector on the TimeFlip events-data UUID. Use `ReadAccelerometer` for one sample, or `AccelerometerSamples` for a cancellable polling stream suitable for double-tap tuning UI. Protocol v4 uses that UUID for textual TimeFlip events instead, so these methods return `ErrUnsupportedOperation` when the session is known to be v4.
+
 ## Interactive Demo
 
 Run the demo CLI with:
