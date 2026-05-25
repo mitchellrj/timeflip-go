@@ -85,7 +85,7 @@ jobs:
           cache: true
 
       - name: Run govulncheck
-        uses: golang/govulncheck-action@b625fbe08f3bccbe446d94fbf87fcc875a4f50ee # tag==v1.0.4
+        uses: golang/govulncheck-action@31f7c5463448f83528bd771c2d978d940080c9fd # branch==main; see golang/go#78345
         with:
           go-version-file: go.mod
           package: ./...
