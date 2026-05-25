@@ -46,9 +46,39 @@ jobs:
             printf 'release_name=%s\n' "$tag"
           } >> "$GITHUB_OUTPUT"
 
+  create-release:
+    name: Create GitHub Release
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+      IS_PRERELEASE: ${{ needs.validate-tag.outputs.is_prerelease }}
+    steps:
+      - name: Create release from tag notes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          args=(--title "$RELEASE_TAG" --notes-from-tag)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Release %s already exists.\n' "$RELEASE_TAG"
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" "${args[@]}"
+
   build:
     name: Build SLSA artifacts (${{ matrix.goos }}/${{ matrix.goarch }})
-    needs: validate-tag
+    needs:
+      - validate-tag
+      - create-release
     permissions:
       id-token: write
       contents: write
