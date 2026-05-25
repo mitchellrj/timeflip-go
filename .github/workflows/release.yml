@@ -98,7 +98,11 @@ jobs:
           - goos: linux
             goarch: arm64
             config-file: .slsa-goreleaser/linux-arm64.yml
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # tag==v2.1.0
+    # SLSA verifier requires this reusable workflow ref to be refs/tags/vX.Y.Z.
+    # See:
+    # * https://github.com/slsa-framework/slsa-github-generator/blob/main/README.md#referencing-slsa-builders-and-generators
+    # * https://github.com/slsa-framework/slsa-github-generator/issues/4440
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.1.0
     with:
       go-version-file: go.mod
       config-file: ${{ matrix.config-file }}
