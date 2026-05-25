@@ -783,6 +783,41 @@ func TestEventsCanOptIntoHistoryNotifications(t *testing.T) {
 	}
 }
 
+func TestEventsDecodeLivePauseStateNotification(t *testing.T) {
+	conn := &fakeConnection{}
+	session := newTestSession(t, conn)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	events, errs, err := session.Events(ctx, EventOptions{Buffer: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn.subscriptions[charEvents] <- Notification{Characteristic: charEvents, Payload: []byte("pause ON")}
+	select {
+	case event := <-events:
+		pause, ok := event.Payload.(PauseStateEvent)
+		if event.Kind != EventPauseState || event.Source != charEvents || !ok || !pause.Paused {
+			t.Fatalf("unexpected pause state event: %+v", event)
+		}
+	case err := <-errs:
+		t.Fatalf("unexpected stream error: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for pause state event")
+	}
+}
+
+func TestDecodePauseStateNotificationCanPreserveRaw(t *testing.T) {
+	session := newTestSession(t, &fakeConnection{})
+	event, err := session.decodeNotification(Notification{Characteristic: charEvents, Payload: []byte("pause OFF")}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pause, ok := event.Payload.(PauseStateEvent)
+	if event.Kind != EventPauseState || !ok || pause.Paused || string(event.Raw) != "pause OFF" || string(pause.Raw) != "pause OFF" {
+		t.Fatalf("unexpected pause state event: %+v payload=%+v", event, pause)
+	}
+}
+
 func TestEventsIncludeRawPreservesTypedEventRaw(t *testing.T) {
 	conn := &fakeConnection{}
 	session := newTestSession(t, conn)

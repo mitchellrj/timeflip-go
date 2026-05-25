@@ -74,11 +74,20 @@ func TestFormatterPrintsEventVariants(t *testing.T) {
 		ReceivedAt: time.Unix(0, 0).UTC(),
 		Payload:    timeflip.DoubleTapEvent{Facet: 4, Pause: true},
 	})
+	formatter.PrintEvent(timeflip.Event{
+		Kind:       timeflip.EventPauseState,
+		DeviceID:   "tf",
+		Source:     timeflip.CharacteristicID("events-source"),
+		ReceivedAt: time.Unix(0, 0).UTC(),
+		Payload:    timeflip.PauseStateEvent{Paused: true},
+	})
 	if !strings.Contains(out.String(), "event: orientation / facet changed") ||
 		!strings.Contains(out.String(), "source: facet-source") ||
 		!strings.Contains(out.String(), "facet: 3") ||
 		!strings.Contains(out.String(), "raw_hex: 03") ||
-		!strings.Contains(out.String(), "pause_encoded: true") {
+		!strings.Contains(out.String(), "pause_encoded: true") ||
+		!strings.Contains(out.String(), "event: pause state update") ||
+		!strings.Contains(out.String(), "paused: true") {
 		t.Fatalf("missing event output: %q", out.String())
 	}
 }

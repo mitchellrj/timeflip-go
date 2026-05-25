@@ -348,6 +348,7 @@ const (
 	EventDoubleTap       EventKind = "double_tap"
 	EventBattery         EventKind = "battery"
 	EventSystemState     EventKind = "system_state"
+	EventPauseState      EventKind = "pause_state"
 	EventHistory         EventKind = "history"
 	EventCommandResult   EventKind = "command_result"
 	EventRaw             EventKind = "raw"
@@ -376,4 +377,10 @@ type DoubleTapEvent struct {
 	Facet FacetID
 	Pause bool
 	Raw   []byte
+}
+
+// PauseStateEvent describes a live pause-state notification.
+type PauseStateEvent struct {
+	Paused bool
+	Raw    []byte
 }

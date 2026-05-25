@@ -65,11 +65,11 @@ For v3 devices, the friendly device name is not exposed through the documented r
 
 Events are technical device events delivered through Go channels. The library does not interpret a facet as a task, stop/start time tracking, or perform business decisions for consuming applications.
 
-By default `Events` subscribes to live facet, double-tap, battery, system-state, and TimeFlip event notifications, but leaves the history data characteristic free for explicit `ReadHistory` calls on the same session. Set `EventOptions.IncludeHistory` when an application intentionally wants history notifications in the event stream.
+By default `Events` subscribes to live facet, double-tap, battery, system-state, and TimeFlip event notifications. TimeFlip text notifications such as `pause ON` and `pause OFF` are emitted as `EventPauseState`, while v3 history pause intervals are decoded from the special history facet value `63`. Events leaves the history data characteristic free for explicit `ReadHistory` calls on the same session. Set `EventOptions.IncludeHistory` when an application intentionally wants history notifications in the event stream.
 
 ## Accelerometer Samples
 
-Protocol v3 devices expose a readable raw accelerometer vector on the TimeFlip events-data UUID. Use `ReadAccelerometer` for one sample, or `AccelerometerSamples` for a cancellable polling stream suitable for double-tap tuning UI. Protocol v4 uses that UUID for textual TimeFlip events instead, so these methods return `ErrUnsupportedOperation` when the session is known to be v4.
+Protocol v3 devices expose a readable raw accelerometer vector on the TimeFlip events-data UUID. Accelerometer data is opt-in only: use `ReadAccelerometer` for one sample, or `AccelerometerSamples` for a cancellable polling stream suitable for double-tap tuning UI. Protocol v4 uses that UUID for textual TimeFlip events instead, so these methods return `ErrUnsupportedOperation` when the session is known to be v4.
 
 ## Interactive Demo
 
