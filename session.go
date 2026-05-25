@@ -34,6 +34,7 @@ var (
 	authorizationResultWindow = 750 * time.Millisecond
 	authorizationPollInterval = 50 * time.Millisecond
 	commandPollInterval       = 50 * time.Millisecond
+	accelerometerPollInterval = 100 * time.Millisecond
 )
 
 // Authorize writes a six-byte password to the device password characteristic.
@@ -206,6 +207,76 @@ func (s *Session) ReadSystemState(ctx context.Context) (SystemState, error) {
 		return SystemState{}, &OperationError{Operation: "read_system_state", DeviceID: s.deviceID, Err: err}
 	}
 	return state, nil
+}
+
+// ReadAccelerometer reads one raw accelerometer vector sample where the protocol exposes it.
+func (s *Session) ReadAccelerometer(ctx context.Context) (AccelerometerSample, error) {
+	if s.protocol == ProtocolV4 {
+		return AccelerometerSample{}, &OperationError{Operation: "read_accelerometer", DeviceID: s.deviceID, Err: ErrUnsupportedOperation}
+	}
+	ctx, cancel := timeoutFrom(ctx, s.defaultTimeout, 0)
+	defer cancel()
+	payload, err := s.conn.Read(ctx, charEvents)
+	if err != nil {
+		return AccelerometerSample{}, wrapContextErr("read_accelerometer", s.deviceID, "", 0, err)
+	}
+	sample, err := decodeAccelerometer(payload)
+	if err != nil {
+		return AccelerometerSample{}, &OperationError{Operation: "read_accelerometer", DeviceID: s.deviceID, Err: newProtocolPayloadError("6-byte v3 accelerometer vector from accelerometer data characteristic", payload)}
+	}
+	sample.ReadAt = time.Now()
+	if s.protocol == ProtocolAuto {
+		s.protocol = ProtocolV3
+	}
+	return sample, nil
+}
+
+// AccelerometerSamples polls raw accelerometer vector samples until ctx is cancelled.
+func (s *Session) AccelerometerSamples(ctx context.Context, opts AccelerometerOptions) (<-chan AccelerometerSample, <-chan error, error) {
+	if opts.Buffer < 0 || opts.Interval < 0 {
+		return nil, nil, &OperationError{Operation: "accelerometer_samples", DeviceID: s.deviceID, Err: ErrInvalidInput}
+	}
+	if s.protocol == ProtocolV4 {
+		return nil, nil, &OperationError{Operation: "accelerometer_samples", DeviceID: s.deviceID, Err: ErrUnsupportedOperation}
+	}
+	interval := opts.Interval
+	if interval == 0 {
+		interval = accelerometerPollInterval
+	}
+	samples := make(chan AccelerometerSample, opts.Buffer)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(samples)
+		defer close(errs)
+		timer := time.NewTimer(0)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-s.done:
+				return
+			case <-timer.C:
+			}
+			sample, err := s.ReadAccelerometer(ctx)
+			if err != nil {
+				select {
+				case errs <- err:
+				default:
+				}
+			} else {
+				select {
+				case samples <- sample:
+				case <-ctx.Done():
+					return
+				case <-s.done:
+					return
+				}
+			}
+			timer.Reset(interval)
+		}
+	}()
+	return samples, errs, nil
 }
 
 // ReadTrackerStatus reads lock, pause, and auto-pause state.

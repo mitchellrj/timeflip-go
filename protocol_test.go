@@ -68,6 +68,14 @@ func TestDecodeNotifications(t *testing.T) {
 	if !state.SyncRequired || state.SyncReason != "time" || state.StatusDescription != "time synchronization required" || !state.HardwareIssue || state.HardwareDescription != "unknown hardware status" {
 		t.Fatalf("unexpected system state: %+v", state)
 	}
+
+	accelerometer, err := decodeAccelerometer([]byte{0x00, 0x10, 0xFF, 0xF0, 0x01, 0x00})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if accelerometer.X != 16 || accelerometer.Y != -16 || accelerometer.Z != 256 {
+		t.Fatalf("unexpected accelerometer sample: %+v", accelerometer)
+	}
 }
 
 func TestDecodeHistoryPacket(t *testing.T) {

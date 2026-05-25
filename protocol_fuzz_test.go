@@ -79,6 +79,15 @@ func FuzzDecodeProtocolPayloads(f *testing.F) {
 			}
 		}
 
+		if sample, err := decodeAccelerometer(payload); err == nil {
+			if len(sample.Raw) != 6 {
+				t.Fatalf("accelerometer raw length = %d, want 6", len(sample.Raw))
+			}
+			if !bytes.Equal(sample.Raw, payload) {
+				t.Fatalf("accelerometer raw mismatch: got %X want %X", sample.Raw, payload)
+			}
+		}
+
 		if entries, stream, err := decodeHistory(payload); err == nil {
 			if len(entries) > 1 {
 				t.Fatalf("v4 history packet produced too many entries: %d", len(entries))

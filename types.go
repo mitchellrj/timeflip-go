@@ -47,6 +47,14 @@ type CommandOptions struct {
 	Timeout time.Duration
 }
 
+// AccelerometerOptions configures accelerometer sample polling.
+type AccelerometerOptions struct {
+	// Buffer sets the sample channel buffer size.
+	Buffer int
+	// Interval sets how often the accelerometer characteristic is read. The default is 100ms.
+	Interval time.Duration
+}
+
 // EventOptions configures event streaming.
 type EventOptions struct {
 	// Buffer sets the event channel buffer size.
@@ -295,6 +303,15 @@ type TapSettings struct {
 	Latency    uint8
 	Window     uint8
 	Raw        []byte
+}
+
+// AccelerometerSample describes one raw accelerometer vector sample.
+type AccelerometerSample struct {
+	X      int16
+	Y      int16
+	Z      int16
+	ReadAt time.Time
+	Raw    []byte
 }
 
 // HistoryRequest requests history from a starting event number.
