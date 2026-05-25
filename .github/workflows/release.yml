@@ -46,44 +46,9 @@ jobs:
             printf 'release_name=%s\n' "$tag"
           } >> "$GITHUB_OUTPUT"
 
-  create-release:
-    name: Create GitHub Release
-    needs: validate-tag
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
-      IS_PRERELEASE: ${{ needs.validate-tag.outputs.is_prerelease }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag==v6.0.2
-        with:
-          fetch-depth: 0
-
-      - name: Create release from tag notes
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          args=(--title "$RELEASE_TAG" --notes-from-tag)
-          if [[ "$IS_PRERELEASE" == "true" ]]; then
-            args+=(--prerelease)
-          fi
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            printf 'Release %s already exists.\n' "$RELEASE_TAG"
-            exit 0
-          fi
-
-          gh release create "$RELEASE_TAG" "${args[@]}"
-
   build:
     name: Build SLSA artifacts (${{ matrix.goos }}/${{ matrix.goarch }})
-    needs:
-      - validate-tag
-      - create-release
+    needs: validate-tag
     permissions:
       id-token: write
       contents: write
@@ -106,31 +71,43 @@ jobs:
     with:
       go-version-file: go.mod
       config-file: ${{ matrix.config-file }}
-      upload-assets: true
-      upload-tag-name: ${{ needs.validate-tag.outputs.tag }}
-      prerelease: ${{ needs.validate-tag.outputs.is_prerelease == 'true' }}
+      upload-assets: false
 
-  checksums:
-    name: Publish SHA256 checksums
+  publish-release:
+    name: Publish GitHub Release
     needs:
       - validate-tag
       - build
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       RELEASE_TAG: ${{ needs.validate-tag.outputs.tag }}
+      IS_PRERELEASE: ${{ needs.validate-tag.outputs.is_prerelease }}
     steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # tag==v6.0.2
+        with:
+          fetch-depth: 0
+
       - name: Download release artifacts
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p build/release-assets
-          gh release download "$RELEASE_TAG" \
-            --pattern 'timeflip-demo-*' \
-            --dir build/release-assets
+          for artifact in \
+            timeflip-demo-linux-amd64 \
+            timeflip-demo-linux-amd64.intoto.jsonl \
+            timeflip-demo-linux-arm64 \
+            timeflip-demo-linux-arm64.intoto.jsonl
+          do
+            gh run download "$GITHUB_RUN_ID" \
+              --name "$artifact" \
+              --dir build/release-assets
+          done
 
       - name: Generate checksums
         shell: bash
@@ -152,6 +129,25 @@ jobs:
 
           sha256sum "${files[@]}" > SHA256SUMS.txt
 
-      - name: Upload checksums
+      - name: Create release with assets and tag notes
         shell: bash
-        run: gh release upload "$RELEASE_TAG" build/release-assets/SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            printf 'Release %s already exists; not modifying existing release.\n' "$RELEASE_TAG"
+            exit 0
+          fi
+
+          args=(--title "$RELEASE_TAG" --notes-from-tag)
+          if [[ "$IS_PRERELEASE" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          mapfile -t assets < <(find build/release-assets -maxdepth 1 -type f -print | sort)
+          if [[ "${#assets[@]}" -eq 0 ]]; then
+            printf 'No release assets found.\n' >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" "${args[@]}" "${assets[@]}"
