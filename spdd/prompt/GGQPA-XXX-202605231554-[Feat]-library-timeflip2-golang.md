@@ -23,6 +23,7 @@ class Client {
 
 class Config {
     +Duration CommunicationTimeout
+    +ProtocolVersion ProtocolVersion
 }
 
 class DiscoveredDevice {
@@ -56,6 +57,12 @@ class Session {
     +ReadDeviceInfo(ctx) DeviceInfo
     +ReadBattery(ctx) BatteryStatus
     +ReadSystemState(ctx) SystemState
+    +ReadTrackerStatus(ctx, options) TrackerStatus
+    +ReadHistory(ctx, request) []HistoryEntry
+    +ReadTaskParameters(ctx, facet, options) TaskParameters
+    +ReadTapSettings(ctx, options) TapSettings
+    +ReadAccelerometer(ctx) AccelerometerSample
+    +AccelerometerSamples(ctx, options) AccelerometerSampleStream
     +SendCommand(ctx, command, options) CommandResult
     +Events(ctx, options) EventStream
     +Close(ctx) error
@@ -68,6 +75,7 @@ class ProtocolAdapter {
     +DecodeDoubleTap(bytes) DoubleTapEvent
     +DecodeSystemState(bytes) SystemState
     +DecodeHistory(bytes) HistoryEntry
+    +DecodeAccelerometer(bytes) AccelerometerSample
 }
 
 class Transport {
@@ -93,8 +101,10 @@ class Command {
 class Event {
     +EventKind kind
     +DeviceID deviceID
+    +CharacteristicID source
     +Time receivedAt
     +any payload
+    +bytes raw
 }
 
 class ManualAction {
@@ -137,7 +147,7 @@ Transport "1" --> "0..N" Connection : creates
    - Do not create a registry, cache, file store, in-memory remembered-device map, or password store. Any device identity, password, labels, task mapping, or last-known state across calls belongs to consuming applications.
 
 4. Events and Command Behavior:
-   - Expose typed technical events for connection state, facet change, double tap, battery change, system state, history entry, command result, and raw/unknown device event.
+   - Expose typed technical events for connection state, facet change, double tap, battery change, system state, live pause-state notifications, history entry, command result, and raw/unknown device event.
    - Avoid interpreting tasks, billable time, or user workflow decisions. A facet event identifies a facet; consuming apps decide what it means.
    - Expose supported non-firmware commands consistently without classifying reads or writes by sensitivity. Keep firmware update and firmware-loader behavior out of scope.
 
@@ -193,19 +203,23 @@ Transport "1" --> "0..N" Connection : creates
    - `go test ./...` can run before hardware-dependent code is available.
    - No package stores remembered device state beyond active objects.
 
-### Implement Public Configuration and Options - Config, CommandOptions, EventOptions
+### Implement Public Configuration and Options - Config, CommandOptions, EventOptions, AccelerometerOptions
 
 1. Responsibility: Define communication timeout behavior and common operation options.
 2. Attributes:
    - `Config.CommunicationTimeout time.Duration`: global timeout applied to BLE communication when operation-specific overrides are absent.
+   - `Config.ProtocolVersion ProtocolVersion`: optional explicit protocol-family selection, with automatic mode as the default.
    - `CommandOptions.Timeout time.Duration`: optional per-command timeout override.
    - `EventOptions.Buffer int`: optional event channel buffer size.
    - `EventOptions.IncludeRaw bool`: optional inclusion of raw payload data in events.
+   - `EventOptions.IncludeHistory bool`: opt-in subscription to history notifications; default event streaming leaves the history characteristic available for explicit `ReadHistory` calls.
+   - `AccelerometerOptions.Buffer int`: optional accelerometer sample channel buffer size.
+   - `AccelerometerOptions.Interval time.Duration`: optional polling interval for accelerometer samples, defaulting to 100ms.
 3. Methods:
    - `func NewClient(transport Transport, config Config) (*Client, error)`
      - Validate non-nil transport.
      - Apply a sensible default communication timeout when unset.
-     - Reject negative timeouts.
+     - Reject negative timeouts and invalid explicit protocol versions.
    - `func timeoutFrom(ctx context.Context, base time.Duration, override time.Duration) (context.Context, context.CancelFunc)`
      - Use override when positive.
      - Use base when override is zero.
@@ -318,12 +332,15 @@ Transport "1" --> "0..N" Connection : creates
    - `func DecodeDoubleTap(payload []byte) (DoubleTapEvent, error)`
    - `func DecodeSystemState(payload []byte) (SystemState, error)`
    - `func DecodeHistory(payload []byte) ([]HistoryEntry, HistoryStreamState, error)`
+   - `func DecodeAccelerometer(payload []byte) (AccelerometerSample, error)`
 3. Logic:
    - Battery level must be parsed as 1-100 percentage when present.
    - Facet payload must distinguish undefined facet, normal facet, and wrong-password zero where context makes that knowable.
    - Double-tap payload below 128 means pause off with the facet value; payload 128 or above means pause on and facet value is payload minus 128.
    - System state must expose sync requirements and hardware issue values without deciding application behavior, including documented status labels for time, facet color, LED brightness, blink interval, task parameters, and auto-pause synchronization.
-   - History parsing must handle single-entry reads, full stream packets, zero terminators, pause-encoded sides, undefined side value, accelerometer error side value, timestamps, durations, and previous-event references.
+   - History parsing must handle single-entry reads, full stream packets, zero terminators, pause-encoded sides, undefined side value, accelerometer error side value, timestamps, durations, and previous-event references. For v3 history, facet `63` must be decoded as a pause interval.
+   - Accelerometer decoding must parse the v3 6-byte big-endian signed `(x,y,z)` vector and preserve raw bytes.
+   - TimeFlip event text `pause ON` and `pause OFF` must decode to a typed live pause-state event when received through event streaming.
 4. Constraints:
    - Preserve raw payload on decoded values where useful for diagnostics.
    - Return protocol errors for malformed lengths.
@@ -436,9 +453,13 @@ Transport "1" --> "0..N" Connection : creates
    - `func (s *Session) ReadHistory(ctx context.Context, req HistoryRequest) ([]HistoryEntry, error)`
    - `func (s *Session) ReadTaskParameters(ctx context.Context, facet FacetID, opts CommandOptions) (TaskParameters, error)`
    - `func (s *Session) ReadTapSettings(ctx context.Context, opts CommandOptions) (TapSettings, error)`
+   - `func (s *Session) ReadAccelerometer(ctx context.Context) (AccelerometerSample, error)`
+   - `func (s *Session) AccelerometerSamples(ctx context.Context, opts AccelerometerOptions) (<-chan AccelerometerSample, <-chan error, error)`
 3. Logic:
    - Use characteristic reads for simple readable values.
    - `ReadTrackerStatus` must use command `0x10`, read acknowledgement from `0x6f54`, then read command output from `0x6f53` as lock, pause, and auto-pause bytes. It should also read the current facet from the facet characteristic when available. This is the current pause/unpause state; it is not emitted as a continuous stream event.
+   - `ReadAccelerometer` must use the documented v3 accelerometer data value on the TimeFlip events-data UUID and return `ErrUnsupportedOperation` for known v4 sessions because v4 uses that UUID for ASCII TimeFlip events.
+   - `AccelerometerSamples` must be opt-in only, poll `ReadAccelerometer` at the configured interval, emit an immediate first sample, close channels on context cancellation or session close, and never subscribe to accelerometer data by default through `Events`.
    - Treat the local `docs/Hardware` files as two firmware/protocol families: the v3-style protocol uses `0x6f53` for command output/history packages and has no v4 `0x6f58` history characteristic; the v4-style protocol adds TimeFlip events, system state, and history data characteristic `0x6f58`.
    - Protocol version can be configured explicitly. Automatic mode should use firmware guidance from practical implementations where `FW_v3.47` and newer use the v4-style behavior, while older firmware uses v3-style behavior; where firmware cannot be read, prefer v4 behavior where available and fall back to v3 behavior when v4-only characteristics are unavailable.
    - `ReadSystemState` is v4-only because v3 uses `0x6f56` as calibration version rather than system-state notifications.
@@ -450,6 +471,7 @@ Transport "1" --> "0..N" Connection : creates
    - Command acknowledgement is read from `0x6f54` as a NUL-terminated value. Trim at the first NUL byte, then use at most the first four acknowledgement bytes and ignore any remaining bytes. The acknowledgement begins as `0xXXYY`, where `XX` is the command and `YY` is `0x02` for executed or `0x01` for error.
    - Command-backed reads such as task parameters (`0x14`) and tap settings (`0x17`) must treat the `0x6f53` command-result output payload as data, not as the two-byte write acknowledgement format.
    - Command-backed reads must ignore stale `0x6f53` output payloads whose first byte does not match the requested command code, waiting until timeout for a matching command output payload, except for known special read responses.
+   - Command-style operations that use shared command and command-result characteristics must be serialized on a session so status reads, commands, and event-adjacent operations do not steal each other's responses.
    - For task-parameter and tap-settings reads, command-result payload `0x1900` must be returned as an unassigned/unconfigured state based on observed Android app behavior, with raw bytes preserved.
    - Protocol v3 history output must decode 21-byte packages from `0x6f53` as seven 3-byte bit-packed blocks matching the Python implementation: facet is the high six bits of the third byte, and duration is the remaining 18 bits interpreted with TimeFlip big-endian ordering. A package of all zeros terminates the stream.
    - Protocol v4 history output must decode 17-byte single records or 20-byte stream packets from `0x6f58` using the v4 history format documented locally.
@@ -484,6 +506,8 @@ Transport "1" --> "0..N" Connection : creates
    - Read command-result output from `0x6f53` only when the command is expected to produce output data.
    - Return `ErrCommandRejected` when device reports command error.
    - Preserve the NUL-trimmed first four raw command-characteristic acknowledgement bytes in `CommandResult.Payload` and `CommandResult.Status.Raw` even when the acknowledgement status byte is malformed and `ErrProtocol` is returned; ignore trailing bytes.
+   - Document observed firmware diagnostics: after `SetName("test")`, firmware may emit TimeFlip event text `Neme set` (`0x4E656D6520736574`) after the advertised name changes; `SetPause(true)` may emit `pause ON` (`0x7061757365204F4E`) without physical interaction; LED blink-period writes may emit `set blinking period` (`0x73657420626C696E6B696E6720706572696F64`); LED brightness writes may emit `set brightness LEDs` (`0x736574206272696768746E657373204C454473`). Treat these as diagnostic evidence, not as a primary command acknowledgement contract unless later implementation explicitly subscribes during writes.
+   - LED status notifications do not include the configured values, so they must not be treated as a readback path for current LED settings.
 4. Constraints:
    - Do not implement firmware update or firmware-loader command as a public supported command.
    - Do not classify operations by sensitivity; all caller-accessible operations follow the same validation and result pattern.
@@ -494,9 +518,13 @@ Transport "1" --> "0..N" Connection : creates
 2. Method:
    - `func (s *Session) Events(ctx context.Context, opts EventOptions) (<-chan Event, <-chan error, error)`
 3. Logic:
-   - Subscribe to facet, double-tap, battery, system-state, TimeFlip events, and history notifications where supported.
+   - Subscribe by default to facet, double-tap, battery, system-state, and TimeFlip events notifications.
+   - Subscribe to history notifications only when `EventOptions.IncludeHistory` is true, so explicit `ReadHistory` remains safe to use on the same session by default.
    - Decode each notification into typed technical events.
    - TimeFlip events characteristic notifications that contain known ASCII event-log text such as `New Side: 0x04` or pause-encoded side values such as `New Side: 0x84` must be promoted to typed facet or double-tap events using the same side encoding rules as facet/double-tap payloads.
+   - TimeFlip events characteristic notifications may include firmware status text such as `Neme set` (`0x4E656D6520736574`) after name writes, `set blinking period` (`0x73657420626C696E6B696E6720706572696F64`) after LED blink-period writes, and `set brightness LEDs` (`0x736574206272696768746E657373204C454473`) after LED brightness writes; preserve such text as raw technical events unless a dedicated typed status event is introduced.
+   - TimeFlip events characteristic notifications with ASCII text `pause ON` or `pause OFF` must be promoted to a typed pause-state event; this is a live command/status notification and is distinct from v3 history pause intervals encoded as facet `63`.
+   - Accelerometer samples must not be part of default `Events`; callers must opt in through `ReadAccelerometer` or `AccelerometerSamples`.
    - TimeFlip events characteristic notifications that do not have a higher-level typed decoder must be emitted as raw technical events instead of surfacing as protocol errors.
    - Event decode errors must include the notification source/characteristic context so consumers can distinguish malformed facet, double-tap, battery, system-state, TimeFlip events, and history notifications.
    - Send unknown but well-formed notifications as raw events when `IncludeRaw` is true.
@@ -529,12 +557,13 @@ Transport "1" --> "0..N" Connection : creates
 
 1. Responsibility: Verify behavior without requiring hardware in normal tests.
 2. Test Groups:
-   - Protocol tests for UUIDs, command encoding, command result decoding, battery, facet, double-tap, system state, and history parsing.
+   - Protocol tests for UUIDs, command encoding, command result decoding, battery, facet, double-tap, system state, accelerometer, and history parsing.
    - Client discovery tests using fake transport.
    - Pairing tests for success, wrong password, OS pairing unsupported/manual action, connect failure, timeout, and no state retention.
    - Unpairing tests for reachable device reset, offline OS unpair, unsupported OS unpair/manual action, and staged partial completion.
    - Session tests for authorization, reads, writes, command rejection, close idempotency, and timeout override.
-   - Event tests for notification decode, channel closure, decode errors, buffer behavior, cancellation, and disconnect.
+   - Event tests for notification decode, live `pause ON` / `pause OFF` text promotion, opt-in history subscriptions, default history exclusion, channel closure, decode errors, buffer behavior, cancellation, and disconnect.
+   - Accelerometer tests for v3 sample reads, polling stream cancellation, invalid options, and v4 unsupported behavior.
 3. Completion Criteria:
    - `go test ./...` passes.
    - Tests assert no package-level cache or registry is introduced.

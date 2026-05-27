@@ -55,6 +55,15 @@ The client has one global communication timeout. Commands may provide a `Command
 
 TimeFlip2 command acknowledgement is read back from the command characteristic after a command write. The value is NUL-terminated; after trimming at the first NUL byte, only the first four bytes are command acknowledgement data and any remaining bytes are ignored. The acknowledgement begins as `0xXXYY`, where `XX` is the command and `YY` is `0x02` for executed or `0x01` for error. Command output data, when a command has output, is read separately from the command-result output characteristic.
 
+Observed firmware behavior can differ from the documented acknowledgement path. TimeFlip event notifications have been observed during command writes:
+
+- `write name test` emitted `0x4E656D6520736574`, the ASCII text `Neme set`, after the advertised name changed.
+- Pause command `0x06 0x01` emitted `0x7061757365204F4E`, the ASCII text `pause ON`, without physical interaction with the device.
+- LED blink-period writes emitted `0x73657420626C696E6B696E6720706572696F64`, the ASCII text `set blinking period`.
+- LED brightness writes emitted `0x736574206272696768746E657373204C454473`, the ASCII text `set brightness LEDs`.
+
+Treat these as diagnostic evidence that firmware reports some successful commands through the TimeFlip events characteristic even when command-result polling is confusing or stale. The LED notifications do not include the configured values, so they do not provide a readback path for current LED settings. Although TimeFlip event text is documented for v4, these notifications have also been observed on v3 hardware. Use the demo `-trace-ble` option when diagnosing command acknowledgement mismatches.
+
 ## Protocol Versions
 
 The hardware documents in `docs/Hardware` describe two protocol families. The v3-style protocol uses the command-result output characteristic for history packages and packs seven 3-byte history blocks into each 21-byte package. The v4-style protocol adds TimeFlip events, system state, and the separate history data characteristic. The client supports an explicit protocol version in `Config` or `ConnectRequest`; automatic mode uses firmware guidance where available (`FW_v3.47` and newer behaves as v4) and otherwise prefers v4 behavior with a v3 fallback where practical.
